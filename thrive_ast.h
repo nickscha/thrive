@@ -150,17 +150,22 @@ THRIVE_API u16 thrive_ast_parse_primary(thrive_parser *p)
     /* identifier */
     if (t->type == THRIVE_TOKEN_VAR)
     {
-        i32 i = 0;
         u16 id = thrive_ast_create(p);
         p->ast[id].type = AST_VAR;
 
         /* copy name */
-        while (t->value.name[i])
         {
-            p->ast[id].v.name[i] = t->value.name[i];
-            i++;
+            u32 i = 0;
+            u32 n = t->value.view.length;
+            u8 *s = t->value.view.start;
+
+            for (i = 0; i < n && i < 31; ++i)
+            {
+                p->ast[id].v.name[i] = s[i];
+            }
+
+            p->ast[id].v.name[i] = 0;
         }
-        p->ast[id].v.name[i] = 0;
 
         thrive_ast_next(p);
         return id;
@@ -248,17 +253,21 @@ THRIVE_API u16 thrive_ast_parse_statement(thrive_parser *p)
         /* allocate node */
         u16 id = thrive_ast_create(p);
 
-        i32 i = 0;
-
         p->ast[id].type = AST_DECL;
 
         /* copy var name */
-        while (v->value.name[i])
         {
-            p->ast[id].v.decl.name[i] = v->value.name[i];
-            i++;
+            u32 i = 0;
+            u32 n = v->value.view.length;
+            u8 *s = v->value.view.start;
+
+            for (i = 0; i < n && i < 31; ++i)
+            {
+                p->ast[id].v.decl.name[i] = s[i];
+            }
+
+            p->ast[id].v.decl.name[i] = 0;
         }
-        p->ast[id].v.decl.name[i] = 0;
 
         thrive_ast_next(p); /* consume var */
 

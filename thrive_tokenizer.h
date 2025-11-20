@@ -67,14 +67,34 @@ typedef struct thrive_token
 
     union value
     {
-        i32 integer;    /* valid if THRIVE_TOKEN_INTEGER */
-        f64 floating;   /* valid if THRIVE_TOKEN_FLOAT   */
-        u8 name[32];    /* valid if THRIVE_TOKEN_VAR     */
-        u8 string[128]; /* valid if THRIVE_TOKEN_STRING  */
+        i32 integer;  /* valid if THRIVE_TOKEN_INTEGER */
+        f64 floating; /* valid if THRIVE_TOKEN_FLOAT   */
+
+        /* valid if THRIVE_TOKEN_VAR or THRIVE_TOKEN_STRING */
+        struct view
+        {
+            u8 *start;
+            u32 length;
+
+        } view;
 
     } value;
 
 } thrive_token;
+
+THRIVE_API THRIVE_INLINE thrive_token_type thrive_keyword_check(u8 *p, u32 len)
+{
+    if (len == 3)
+    {
+        if (p[0] == 'u' && p[1] == '3' && p[2] == '2')
+            return THRIVE_TOKEN_KEYWORD_U32;
+        if (p[0] == 'r' && p[1] == 'e' && p[2] == 't')
+            return THRIVE_TOKEN_KEYWORD_RET;
+        if (p[0] == 'e' && p[1] == 'x' && p[2] == 't')
+            return THRIVE_TOKEN_KEYWORD_EXT;
+    }
+    return THRIVE_TOKEN_VAR;
+}
 
 THRIVE_API THRIVE_INLINE u8 thrive_tokenizer(
     u8 *code,             /* The source code to tokenize */
@@ -132,59 +152,35 @@ THRIVE_API THRIVE_INLINE u8 thrive_tokenizer(
             return 0;
         }
 
-        /* 2. Identifiers (Starts with Alpha or _) */
+        /* 2. Identifiers (alpha or _) */
         if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_')
         {
             thrive_token *tok = &tokens[*tokens_size];
-            i32 len = 0;
+            u8 *start = cursor;
 
             tok->cursor_pos = (u32)(cursor - code);
             tok->line_num = line_num;
 
-            /* Fast copy loop */
-            while (cursor < code_end && len < 31)
+            while (cursor < code_end)
             {
                 u8 nc = *cursor;
 
-                if (!((nc >= 'a' && nc <= 'z') || (nc >= 'A' && nc <= 'Z') || (nc >= '0' && nc <= '9') || nc == '_'))
+                if (!((nc >= 'a' && nc <= 'z') ||
+                      (nc >= 'A' && nc <= 'Z') ||
+                      (nc >= '0' && nc <= '9') ||
+                      nc == '_'))
                 {
                     break;
                 }
 
-                tok->value.name[len++] = nc;
                 cursor++;
             }
-            tok->value.name[len] = '\0';
 
-            /* Fast Keyword Check (Length + Char comparison) */
-            if (len == 3)
-            {
-                u8 *n = tok->value.name;
-
-                if (n[0] == 'u' && n[1] == '3' && n[2] == '2')
-                {
-                    tok->type = THRIVE_TOKEN_KEYWORD_U32;
-                }
-                else if (n[0] == 'r' && n[1] == 'e' && n[2] == 't')
-                {
-                    tok->type = THRIVE_TOKEN_KEYWORD_RET;
-                }
-                else if (n[0] == 'e' && n[1] == 'x' && n[2] == 't')
-                {
-                    tok->type = THRIVE_TOKEN_KEYWORD_EXT;
-                }
-                else
-                {
-                    tok->type = THRIVE_TOKEN_VAR;
-                }
-            }
-            else
-            {
-                tok->type = THRIVE_TOKEN_VAR;
-            }
+            tok->value.view.start = start;
+            tok->value.view.length = (u32)(cursor - start);
+            tok->type = thrive_keyword_check(start, tok->value.view.length);
 
             (*tokens_size)++;
-
             continue;
         }
 
@@ -331,68 +327,36 @@ THRIVE_API THRIVE_INLINE u8 thrive_tokenizer(
             continue;
         }
 
-        /* 4. String Literals */
+        /* 4. String */
         if (c == '"')
         {
             thrive_token *tok = &tokens[*tokens_size];
-            i32 i = 0;
-
+            u8 *start;
             tok->cursor_pos = (u32)(cursor - code);
             tok->line_num = line_num;
 
-            cursor++; /* skip opening " */
+            cursor++; /* skip opening quote */
+            start = cursor;
 
-            while (cursor < code_end && *cursor != '"' && i < 127)
+            while (cursor < code_end && *cursor != '"')
             {
-                u8 sc = *cursor;
-
-                if (sc == '\\')
+                if (*cursor == '\\' && cursor + 1 < code_end)
                 {
                     cursor++;
-
-                    if (cursor >= code_end)
-                    {
-                        break;
-                    }
-
-                    switch (*cursor)
-                    {
-                    case 'n':
-                        tok->value.string[i++] = '\n';
-                        break;
-                    case 't':
-                        tok->value.string[i++] = '\t';
-                        break;
-                    case 'r':
-                        tok->value.string[i++] = '\r';
-                        break;
-                    case '"':
-                        tok->value.string[i++] = '"';
-                        break;
-                    case '\\':
-                        tok->value.string[i++] = '\\';
-                        break;
-                    default:
-                        tok->value.string[i++] = *cursor;
-                        break;
-                    }
                 }
-                else
-                {
-                    tok->value.string[i++] = sc;
-                }
-                cursor++;
-            }
-            tok->value.string[i] = '\0';
-
-            if (cursor < code_end && *cursor == '"')
-            {
                 cursor++;
             }
 
             tok->type = THRIVE_TOKEN_STRING;
-            (*tokens_size)++;
+            tok->value.view.start = start;
+            tok->value.view.length = (u32)(cursor - start);
 
+            if (cursor < code_end && *cursor == '"')
+            {
+                cursor++; /* skip closing */
+            }
+
+            (*tokens_size)++;
             continue;
         }
 
