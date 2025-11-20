@@ -82,20 +82,6 @@ typedef struct thrive_token
 
 } thrive_token;
 
-THRIVE_API THRIVE_INLINE thrive_token_type thrive_keyword_check(u8 *p, u32 len)
-{
-    if (len == 3)
-    {
-        if (p[0] == 'u' && p[1] == '3' && p[2] == '2')
-            return THRIVE_TOKEN_KEYWORD_U32;
-        if (p[0] == 'r' && p[1] == 'e' && p[2] == 't')
-            return THRIVE_TOKEN_KEYWORD_RET;
-        if (p[0] == 'e' && p[1] == 'x' && p[2] == 't')
-            return THRIVE_TOKEN_KEYWORD_EXT;
-    }
-    return THRIVE_TOKEN_VAR;
-}
-
 THRIVE_API THRIVE_INLINE u8 thrive_tokenizer(
     u8 *code,             /* The source code to tokenize */
     u32 code_size,        /* The source code size */
@@ -139,6 +125,7 @@ THRIVE_API THRIVE_INLINE u8 thrive_tokenizer(
 
             /* Skip other non-printable control characters */
             cursor++;
+
             continue;
         }
 
@@ -178,9 +165,26 @@ THRIVE_API THRIVE_INLINE u8 thrive_tokenizer(
 
             tok->value.view.start = start;
             tok->value.view.length = (u32)(cursor - start);
-            tok->type = thrive_keyword_check(start, tok->value.view.length);
+            tok->type = THRIVE_TOKEN_VAR;
+
+            if (tok->value.view.length == 3)
+            {
+                if (start[0] == 'u' && start[1] == '3' && start[2] == '2')
+                {
+                    tok->type = THRIVE_TOKEN_KEYWORD_U32;
+                }
+                else if (start[0] == 'r' && start[1] == 'e' && start[2] == 't')
+                {
+                    tok->type = THRIVE_TOKEN_KEYWORD_RET;
+                }
+                else if (start[0] == 'e' && start[1] == 'x' && start[2] == 't')
+                {
+                    tok->type = THRIVE_TOKEN_KEYWORD_EXT;
+                }
+            }
 
             (*tokens_size)++;
+
             continue;
         }
 
@@ -198,6 +202,7 @@ THRIVE_API THRIVE_INLINE u8 thrive_tokenizer(
             if (c == '0' && cursor + 1 < code_end)
             {
                 u8 next_c = *(cursor + 1);
+
                 if (next_c == 'x' || next_c == 'X')
                 {
                     /* Hex Parser */
@@ -236,6 +241,7 @@ THRIVE_API THRIVE_INLINE u8 thrive_tokenizer(
 
                     tok->type = THRIVE_TOKEN_INTEGER;
                     tok->value.integer = val;
+
                     (*tokens_size)++;
 
                     continue;
@@ -270,6 +276,7 @@ THRIVE_API THRIVE_INLINE u8 thrive_tokenizer(
                     }
                     tok->type = THRIVE_TOKEN_INTEGER;
                     tok->value.integer = val;
+
                     (*tokens_size)++;
 
                     continue;
@@ -296,6 +303,7 @@ THRIVE_API THRIVE_INLINE u8 thrive_tokenizer(
                 {
                     is_float = 1;
                     cursor++;
+
                     if (cursor < code_end && (*cursor == '+' || *cursor == '-'))
                     {
                         cursor++;
@@ -332,6 +340,7 @@ THRIVE_API THRIVE_INLINE u8 thrive_tokenizer(
         {
             thrive_token *tok = &tokens[*tokens_size];
             u8 *start;
+
             tok->cursor_pos = (u32)(cursor - code);
             tok->line_num = line_num;
 
@@ -357,6 +366,7 @@ THRIVE_API THRIVE_INLINE u8 thrive_tokenizer(
             }
 
             (*tokens_size)++;
+
             continue;
         }
 

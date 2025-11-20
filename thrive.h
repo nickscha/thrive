@@ -181,6 +181,7 @@ THRIVE_API THRIVE_INLINE f64 thrive_strtod(u8 *str, u8 **endptr)
         f64 base = 0.1;
 
         str++;
+
         while (thrive_is_digit(*str) || *str == '_')
         {
             if (*str == '_')
@@ -191,6 +192,7 @@ THRIVE_API THRIVE_INLINE f64 thrive_strtod(u8 *str, u8 **endptr)
 
             result += (*str - '0') * base;
             base *= 0.1;
+
             str++;
         }
     }
@@ -215,6 +217,7 @@ THRIVE_API THRIVE_INLINE f64 thrive_strtod(u8 *str, u8 **endptr)
             if (*str == '_')
             {
                 str++;
+                
                 continue;
             }
             exponent = exponent * 10 + (*str - '0');
