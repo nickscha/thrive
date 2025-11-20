@@ -76,11 +76,6 @@ typedef struct thrive_token
 
 } thrive_token;
 
-THRIVE_API THRIVE_INLINE u8 thrive_is_identifier_char(u8 c)
-{
-    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_';
-}
-
 THRIVE_API THRIVE_INLINE u8 thrive_tokenizer(
     u8 *code,             /* The source code to tokenize */
     u32 code_size,        /* The source code size */
@@ -151,7 +146,7 @@ THRIVE_API THRIVE_INLINE u8 thrive_tokenizer(
             {
                 u8 nc = *cursor;
 
-                if (!thrive_is_identifier_char(nc))
+                if (!((nc >= 'a' && nc <= 'z') || (nc >= 'A' && nc <= 'Z') || (nc >= '0' && nc <= '9') || nc == '_'))
                 {
                     break;
                 }

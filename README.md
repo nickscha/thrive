@@ -1,5 +1,5 @@
 # thrive
-A C89 standard compliant, nostdlib (no C Standard Library) Low Level Programming Language inbetween Assembly and C (THRIVE).
+Low Level Programming Language inbetween Assembly and C (THRIVE).
 
 For more information please look at the "thrive.h" file or take a look at the "examples" or "tests" folder.
 

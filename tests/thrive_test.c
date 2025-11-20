@@ -148,7 +148,7 @@ static void thrive_test_compiler(void)
   thrive_print_tokens(tokens, tokens_size);
 
   /* Generate AST */
-  thrive_parse_program(tokens, tokens_size, ast, AST_CAPACITY, &ast_size);
+  thrive_ast_parse(tokens, tokens_size, ast, AST_CAPACITY, &ast_size);
   assert(ast_size == 16);
 
   {
@@ -171,7 +171,7 @@ static void thrive_test_compiler(void)
   printf("[hgl-asm-x86_64]\n%s", code_asm);
 
   /* optimize ast */
-  thrive_optimize_ast(ast, &ast_size);
+  thrive_ast_optimize(ast, &ast_size);
   assert(ast_size == 2);
   assert(ast[0].type == AST_RETURN);
   assert(ast[1].type == AST_FLOAT);

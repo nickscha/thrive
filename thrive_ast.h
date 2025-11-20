@@ -33,19 +33,19 @@ typedef struct thrive_ast
 {
     thrive_ast_type type;
 
-    union
+    union v
     {
         i32 int_val;   /* AST_INT */
         f64 float_val; /* AST_FLOAT */
         u8 name[32];   /* AST_VAR or DECL varname */
 
-        struct
+        struct op
         { /* binary ops / assignment */
             u16 left;
             u16 right;
         } op;
 
-        struct
+        struct decl
         { /* DECL */
             u8 name[32];
             u16 expr;
@@ -65,38 +65,43 @@ typedef struct thrive_parser
     thrive_ast *ast;
     u32 ast_cap;
     u32 ast_size;
+
 } thrive_parser;
 
-THRIVE_API THRIVE_INLINE thrive_token *peek(thrive_parser *p)
+THRIVE_API THRIVE_INLINE thrive_token *thrive_ast_peek(thrive_parser *p)
 {
     return (p->pos < p->count) ? &p->toks[p->pos] : &p->toks[p->count - 1];
 }
 
-THRIVE_API THRIVE_INLINE thrive_token *next(thrive_parser *p)
+THRIVE_API THRIVE_INLINE thrive_token *thrive_ast_next(thrive_parser *p)
 {
     if (p->pos < p->count)
+    {
         p->pos++;
-    return peek(p);
+    }
+
+    return thrive_ast_peek(p);
 }
 
-THRIVE_API THRIVE_INLINE i32 accept(thrive_parser *p, thrive_token_type t)
+THRIVE_API THRIVE_INLINE i32 thrive_ast_accept(thrive_parser *p, thrive_token_type t)
 {
-    if (peek(p)->type == t)
+    if (thrive_ast_peek(p)->type == t)
     {
-        next(p);
+        thrive_ast_next(p);
         return 1;
     }
+
     return 0;
 }
 
-THRIVE_API THRIVE_INLINE u16 ast_new(thrive_parser *p)
+THRIVE_API THRIVE_INLINE u16 thrive_ast_create(thrive_parser *p)
 {
     u16 id = (u16)p->ast_size;
     p->ast_size++;
     return id;
 }
 
-THRIVE_API i32 precedence(thrive_token_type t)
+THRIVE_API i32 thrive_ast_precedence(thrive_token_type t)
 {
     switch (t)
     {
@@ -116,58 +121,56 @@ THRIVE_API i32 precedence(thrive_token_type t)
     }
 }
 
-THRIVE_API u16 parse_expr_bp(thrive_parser *p, i32 min_bp);
+THRIVE_API u16 thrive_ast_parse_expr_bp(thrive_parser *p, i32 min_bp);
 
-THRIVE_API u16 parse_primary(thrive_parser *p)
+THRIVE_API u16 thrive_ast_parse_primary(thrive_parser *p)
 {
-    thrive_token *t = peek(p);
+    thrive_token *t = thrive_ast_peek(p);
 
     /* integer literal */
     if (t->type == THRIVE_TOKEN_INTEGER)
     {
-        u16 id = ast_new(p);
+        u16 id = thrive_ast_create(p);
         p->ast[id].type = AST_INT;
         p->ast[id].v.int_val = t->value.integer;
-        next(p);
+        thrive_ast_next(p);
         return id;
     }
 
     /* float literal */
     if (t->type == THRIVE_TOKEN_FLOAT)
     {
-        u16 id = ast_new(p);
+        u16 id = thrive_ast_create(p);
         p->ast[id].type = AST_FLOAT;
         p->ast[id].v.float_val = t->value.floating;
-        next(p);
+        thrive_ast_next(p);
         return id;
     }
 
     /* identifier */
     if (t->type == THRIVE_TOKEN_VAR)
     {
-        u16 id = ast_new(p);
+        i32 i = 0;
+        u16 id = thrive_ast_create(p);
         p->ast[id].type = AST_VAR;
 
         /* copy name */
+        while (t->value.name[i])
         {
-            i32 i = 0;
-            while (t->value.name[i])
-            {
-                p->ast[id].v.name[i] = t->value.name[i];
-                i++;
-            }
-            p->ast[id].v.name[i] = 0;
+            p->ast[id].v.name[i] = t->value.name[i];
+            i++;
         }
+        p->ast[id].v.name[i] = 0;
 
-        next(p);
+        thrive_ast_next(p);
         return id;
     }
 
     /* parenthesized expression */
-    if (accept(p, THRIVE_TOKEN_LPAREN))
+    if (thrive_ast_accept(p, THRIVE_TOKEN_LPAREN))
     {
-        u16 inner = parse_expr_bp(p, 0);
-        accept(p, THRIVE_TOKEN_RPAREN); /* assume correct syntax */
+        u16 inner = thrive_ast_parse_expr_bp(p, 0);
+        thrive_ast_accept(p, THRIVE_TOKEN_RPAREN); /* assume correct syntax */
         return inner;
     }
 
@@ -175,18 +178,16 @@ THRIVE_API u16 parse_primary(thrive_parser *p)
     return 0;
 }
 
-/* ---- Pratt expression parser ---- */
-
-THRIVE_API u16 parse_expr_bp(thrive_parser *p, i32 min_bp)
+THRIVE_API u16 thrive_ast_parse_expr_bp(thrive_parser *p, i32 min_bp)
 {
     /* parse primary first */
-    u16 left = parse_primary(p);
+    u16 left = thrive_ast_parse_primary(p);
 
     for (;;)
     {
-        thrive_token_type op = peek(p)->type;
-        i32 bp = precedence(op);
-        i32 next_min_bp;
+        thrive_token_type op = thrive_ast_peek(p)->type;
+        i32 bp = thrive_ast_precedence(op);
+        i32 thrive_ast_next_min_bp;
         u16 right;
         u16 id;
 
@@ -196,14 +197,14 @@ THRIVE_API u16 parse_expr_bp(thrive_parser *p, i32 min_bp)
         }
 
         /* determine left & right associativity */
-        next_min_bp = bp + (op == THRIVE_TOKEN_ASSIGN ? 0 : 1);
+        thrive_ast_next_min_bp = bp + (op == THRIVE_TOKEN_ASSIGN ? 0 : 1);
 
-        next(p); /* consume operator */
+        thrive_ast_next(p); /* consume operator */
 
-        right = parse_expr_bp(p, next_min_bp);
+        right = thrive_ast_parse_expr_bp(p, thrive_ast_next_min_bp);
 
         /* build AST node */
-        id = ast_new(p);
+        id = thrive_ast_create(p);
 
         switch (op)
         {
@@ -235,19 +236,17 @@ THRIVE_API u16 parse_expr_bp(thrive_parser *p, i32 min_bp)
     return left;
 }
 
-/* ---- Parse a statement ---- */
-
-THRIVE_API u16 parse_stmt(thrive_parser *p)
+THRIVE_API u16 thrive_ast_parse_statement(thrive_parser *p)
 {
-    peek(p);
+    thrive_ast_peek(p);
 
     /* u32 var = expr */
-    if (accept(p, THRIVE_TOKEN_KEYWORD_U32))
+    if (thrive_ast_accept(p, THRIVE_TOKEN_KEYWORD_U32))
     {
-        thrive_token *v = peek(p);
+        thrive_token *v = thrive_ast_peek(p);
 
         /* allocate node */
-        u16 id = ast_new(p);
+        u16 id = thrive_ast_create(p);
 
         i32 i = 0;
 
@@ -261,31 +260,29 @@ THRIVE_API u16 parse_stmt(thrive_parser *p)
         }
         p->ast[id].v.decl.name[i] = 0;
 
-        next(p); /* consume var */
+        thrive_ast_next(p); /* consume var */
 
-        accept(p, THRIVE_TOKEN_ASSIGN);
+        thrive_ast_accept(p, THRIVE_TOKEN_ASSIGN);
 
-        p->ast[id].v.decl.expr = parse_expr_bp(p, 0);
+        p->ast[id].v.decl.expr = thrive_ast_parse_expr_bp(p, 0);
 
         return id;
     }
 
     /* ret expr */
-    if (accept(p, THRIVE_TOKEN_KEYWORD_RET))
+    if (thrive_ast_accept(p, THRIVE_TOKEN_KEYWORD_RET))
     {
-        u16 id = ast_new(p);
+        u16 id = thrive_ast_create(p);
         p->ast[id].type = AST_RETURN;
-        p->ast[id].v.expr = parse_expr_bp(p, 0);
+        p->ast[id].v.expr = thrive_ast_parse_expr_bp(p, 0);
         return id;
     }
 
     /* otherwise parse bare expression */
-    return parse_expr_bp(p, 0);
+    return thrive_ast_parse_expr_bp(p, 0);
 }
 
-/* ---- Parse a whole program ---- */
-
-THRIVE_API void thrive_parse_program(
+THRIVE_API void thrive_ast_parse(
     thrive_token *tokens,
     u32 token_count,
     thrive_ast *ast_buf,
@@ -300,10 +297,10 @@ THRIVE_API void thrive_parse_program(
     P.ast_cap = ast_cap;
     P.ast_size = 0;
 
-    while (peek(&P)->type != THRIVE_TOKEN_EOF &&
+    while (thrive_ast_peek(&P)->type != THRIVE_TOKEN_EOF &&
            P.ast_size < P.ast_cap)
     {
-        parse_stmt(&P);
+        thrive_ast_parse_statement(&P);
     }
 
     *ast_out = P.ast_size;
