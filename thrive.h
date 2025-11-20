@@ -1,4 +1,4 @@
-/* thrive.h - v0.1 - public domain data structures - nickscha 2025
+/* thrive.h - v0.2 - public domain data structures - nickscha 2025
 
 A C89 standard compliant, nostdlib (no C Standard Library) Low Level Programming Language inbetween Assembly and C (THRIVE).
 
@@ -1756,7 +1756,7 @@ THRIVE_API void thrive_codegen(
 
     /* --- Pass 2: Emit .data Section --- */
     thrive_cg_emit_str(&ctx, "segment .data\n");
-    
+
     for (i = 0; i < ctx.globals_count; ++i)
     {
         if (ctx.globals[i].section == SECTION_DATA)
@@ -1785,8 +1785,6 @@ THRIVE_API void thrive_codegen(
 
     /* --- Pass 4: Emit .text Section --- */
     thrive_cg_emit_str(&ctx, "segment .text\nglobal main\nextern ExitProcess\n\nmain:\n");
-    /* Note: We must align stack if we call functions, but ExitProcess is fine.
-       If we called C functions we'd need 'sub rsp, 40' (shadow space + align) */
     thrive_cg_emit_str(&ctx, "    sub rsp, 40 ; Shadow space (32) + Align (8)\n\n");
 
     for (i = 0; i < ast_size; ++i)
