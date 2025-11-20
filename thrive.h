@@ -65,6 +65,22 @@ THRIVE_API THRIVE_INLINE u32 thrive_strlen(u8 *str)
     return len;
 }
 
+THRIVE_API THRIVE_INLINE u32 thrive_streq(u8 *a, u8 *b)
+{
+    while (*a && *b)
+    {
+        if (*a != *b)
+        {
+            return 0;
+        }
+
+        a++;
+        b++;
+    }
+
+    return (*a == *b);
+}
+
 THRIVE_API THRIVE_INLINE i32 thrive_strtol(u8 *str, u8 **endptr, i32 base)
 {
     i32 result = 0;
@@ -988,18 +1004,6 @@ THRIVE_API void thrive_ast_parse(
 #define MAX_CONSTANTS 128
 #define MAX_AST_NODES 1024
 
-THRIVE_API int thrive_strequal(u8 *a, u8 *b)
-{
-    while (*a && *b)
-    {
-        if (*a != *b)
-            return 0;
-        a++;
-        b++;
-    }
-    return (*a == *b);
-}
-
 THRIVE_API u32 thrive_hash_name(u8 *name)
 {
     u32 hash = 5381;
@@ -1034,19 +1038,28 @@ THRIVE_API thrive_const_sym *thrive_ast_find_const(thrive_optimizer_ctx *ctx, u8
 {
     u32 initial_idx = thrive_hash_name(name);
     u32 idx = initial_idx;
+
     if (name[0] == 0)
-        return (void *)0;
+    {
+        return (thrive_const_sym *)((void *)0);
+    }
 
     do
     {
-        if (ctx->constants[idx].name[0] != 0 && thrive_strequal(ctx->constants[idx].name, name))
+        if (ctx->constants[idx].name[0] != 0 && thrive_streq(ctx->constants[idx].name, name))
+        {
             return &ctx->constants[idx];
+        }
         if (ctx->constants[idx].name[0] == 0)
-            return (void *)0;
+        {
+            return (thrive_const_sym *)((void *)0);
+        }
+
         idx = (idx + 1) % MAX_CONSTANTS;
+
     } while (idx != initial_idx);
 
-    return (void *)0;
+    return (thrive_const_sym *)((void *)0);
 }
 
 THRIVE_API void thrive_ast_register_const(thrive_optimizer_ctx *ctx, u8 *name, u8 is_float, i32 i_val, f64 f_val)
@@ -1056,9 +1069,14 @@ THRIVE_API void thrive_ast_register_const(thrive_optimizer_ctx *ctx, u8 *name, u
     u32 k = 0;
 
     if (ctx->count >= MAX_CONSTANTS)
+    {
         return;
+    }
+
     if (thrive_ast_find_const(ctx, name))
+    {
         return;
+    }
 
     do
     {
@@ -1071,14 +1089,22 @@ THRIVE_API void thrive_ast_register_const(thrive_optimizer_ctx *ctx, u8 *name, u
             }
             ctx->constants[idx].name[k] = 0;
             ctx->constants[idx].is_float = is_float;
+
             if (is_float)
+            {
                 ctx->constants[idx].val.f_val = f_val;
+            }
             else
+            {
                 ctx->constants[idx].val.i_val = i_val;
+            }
+
             ctx->count++;
+
             return;
         }
         idx = (idx + 1) % MAX_CONSTANTS;
+
     } while (idx != initial_idx);
 }
 
@@ -1089,7 +1115,9 @@ THRIVE_API u8 thrive_ast_try_propagate_var(thrive_optimizer_ctx *ctx, u16 node_i
     thrive_const_sym *sym;
 
     if (node->type != AST_VAR)
+    {
         return 0;
+    }
 
     sym = thrive_ast_find_const(ctx, node->v.name);
     if (sym)
@@ -1201,7 +1229,10 @@ THRIVE_API void thrive_ast_optimize_node(thrive_optimizer_ctx *ctx, u16 node_id)
     thrive_ast *node;
 
     if (node_id >= ctx->ast_size)
+    {
         return;
+    }
+
     node = &ctx->ast[node_id];
 
     switch (node->type)
@@ -1240,10 +1271,15 @@ THRIVE_API void thrive_ast_scan_constants(thrive_optimizer_ctx *ctx)
         {
             u16 expr_idx = ast[i].v.decl.expr;
             thrive_ast *expr_node = &ast[expr_idx];
+
             if (expr_node->type == AST_INT)
+            {
                 thrive_ast_register_const(ctx, ast[i].v.decl.name, 0, expr_node->v.int_val, 0.0);
+            }
             else if (expr_node->type == AST_FLOAT)
+            {
                 thrive_ast_register_const(ctx, ast[i].v.decl.name, 1, 0, expr_node->v.float_val);
+            }
         }
     }
 }
@@ -1256,7 +1292,9 @@ THRIVE_API void thrive_ast_mark_alive(thrive_ast *ast, u8 *alive_map, u16 node_i
 
     /* If already marked, stop recursion */
     if (alive_map[node_id])
+    {
         return;
+    }
 
     alive_map[node_id] = 1;
     node = &ast[node_id];
@@ -1310,11 +1348,11 @@ THRIVE_API void thrive_ast_compact(thrive_ast *ast, u32 *ast_size)
         {
             thrive_ast_mark_alive(ast, alive_map, (u16)i);
         }
-        /* NOTE: If you support non-constant vars, you'd add a check here to mark DECLs that aren't in the constant table */
     }
 
     /* 3. Compaction Phase: Move live nodes to front */
     write_idx = 0;
+
     for (i = 0; i < old_size; ++i)
     {
         if (alive_map[i])
@@ -1323,6 +1361,7 @@ THRIVE_API void thrive_ast_compact(thrive_ast *ast, u32 *ast_size)
             {
                 ast[write_idx] = ast[i];
             }
+
             index_map[i] = (u16)write_idx;
             write_idx++;
         }
@@ -1377,15 +1416,18 @@ THRIVE_API void thrive_ast_optimize(thrive_ast *ast, u32 *ast_size_ptr)
     for (i = 0; i < ctx.ast_size; ++i)
     {
         if (ast[i].type == AST_DECL || ast[i].type == AST_ASSIGN || ast[i].type == AST_RETURN)
+        {
             thrive_ast_optimize_node(&ctx, (u16)i);
+        }
     }
 
     /* Pass 3 & 4: Rescan and Propagate (Second Pass for deep folding) */
     thrive_ast_scan_constants(&ctx);
     for (i = 0; i < ctx.ast_size; ++i)
     {
+        /* Primarily target returns for final propagation */
         if (ast[i].type == AST_RETURN)
-        { /* Primarily target returns for final propagation */
+        {
             thrive_ast_optimize_node(&ctx, (u16)i);
         }
     }
@@ -1425,6 +1467,7 @@ typedef struct thrive_codegen_ctx
     u32 ast_size;
     thrive_symbol globals[MAX_GLOBALS];
     u32 globals_count;
+
 } thrive_codegen_ctx;
 
 THRIVE_API void thrive_cg_emit_char(thrive_codegen_ctx *ctx, u8 c)
@@ -1444,7 +1487,7 @@ THRIVE_API void thrive_cg_emit_char(thrive_codegen_ctx *ctx, u8 c)
     }
 }
 
-THRIVE_API void thrive_cg_emit_str(thrive_codegen_ctx *ctx, const char *s)
+THRIVE_API void thrive_cg_emit_str(thrive_codegen_ctx *ctx, char *s)
 {
     while (*s)
     {
@@ -1471,7 +1514,7 @@ THRIVE_API void thrive_cg_emit_u32(thrive_codegen_ctx *ctx, u32 v)
         v /= 10;
     }
 
-    for (j = i - 1; j >= 0; j--)
+    for (j = i - 1; j >= 0; --j)
     {
         thrive_cg_emit_char(ctx, buffer[j]);
     }
@@ -1484,43 +1527,36 @@ THRIVE_API void thrive_cg_emit_i32(thrive_codegen_ctx *ctx, i32 v)
         thrive_cg_emit_char(ctx, '-');
         v = -v;
     }
+
     thrive_cg_emit_u32(ctx, (u32)v);
 }
 
 THRIVE_API void thrive_cg_emit_hex_digit(thrive_codegen_ctx *ctx, u8 nibble)
 {
     if (nibble < 10)
+    {
         thrive_cg_emit_char(ctx, nibble + '0');
+    }
     else
+    {
         thrive_cg_emit_char(ctx, nibble - 10 + 'A');
+    }
 }
 
 THRIVE_API void thrive_cg_emit_hex_u32_full(thrive_codegen_ctx *ctx, u32 v)
 {
     i32 i;
+
     for (i = 28; i >= 0; i -= 4)
     {
         thrive_cg_emit_hex_digit(ctx, (u8)((v >> i) & 0xF));
     }
 }
 
-/* ---- Symbol Management ---- */
-
-THRIVE_API int thrive_streq(const u8 *a, const u8 *b)
-{
-    while (*a && *b)
-    {
-        if (*a != *b)
-            return 0;
-        a++;
-        b++;
-    }
-    return (*a == *b);
-}
-
 THRIVE_API thrive_symbol *thrive_find_global(thrive_codegen_ctx *ctx, u8 *name)
 {
     u32 i;
+
     for (i = 0; i < ctx->globals_count; ++i)
     {
         if (thrive_streq(ctx->globals[i].name, name))
@@ -1528,6 +1564,7 @@ THRIVE_API thrive_symbol *thrive_find_global(thrive_codegen_ctx *ctx, u8 *name)
             return &ctx->globals[i];
         }
     }
+
     return (thrive_symbol *)((void *)0);
 }
 
@@ -1537,9 +1574,14 @@ THRIVE_API void thrive_register_global(thrive_codegen_ctx *ctx, u8 *name, thrive
     u32 k = 0;
 
     if (thrive_find_global(ctx, name))
+    {
         return; /* Already exists */
+    }
+
     if (ctx->globals_count >= MAX_GLOBALS)
+    {
         return;
+    }
 
     idx = ctx->globals_count++;
 
@@ -1548,15 +1590,13 @@ THRIVE_API void thrive_register_global(thrive_codegen_ctx *ctx, u8 *name, thrive
         ctx->globals[idx].name[k] = name[k];
         k++;
     }
+
     ctx->globals[idx].name[k] = 0;
     ctx->globals[idx].section = sec;
     ctx->globals[idx].initial_value = val;
 }
 
 /* ---- Pass 1: Scan for Variables ---- */
-
-/* ---- Assembly Emitters ---- */
-
 THRIVE_API void thrive_emit_node(thrive_codegen_ctx *ctx, u16 node_idx)
 {
     thrive_ast *node = &ctx->ast[node_idx];
@@ -1575,7 +1615,9 @@ THRIVE_API void thrive_emit_node(thrive_codegen_ctx *ctx, u16 node_idx)
         {
             f64 f;
             u32 u[2];
+
         } cvt;
+
         cvt.f = node->v.float_val;
 
         thrive_cg_emit_str(ctx, "    mov  rax, 0x");
@@ -1687,7 +1729,9 @@ THRIVE_API void thrive_codegen(
 
     /* Ensure clean start */
     if (ctx.cap > 0)
+    {
         ctx.buf[0] = 0;
+    }
 
     thrive_cg_emit_str(&ctx, "bits 64\ndefault rel\n\n");
 
@@ -1698,6 +1742,7 @@ THRIVE_API void thrive_codegen(
         {
             /* Optimization: If init expr is just an INT, put in .data */
             u16 expr_idx = ast[i].v.decl.expr;
+
             if (ast[expr_idx].type == AST_INT)
             {
                 thrive_register_global(&ctx, ast[i].v.decl.name, SECTION_DATA, ast[expr_idx].v.int_val);
@@ -1711,6 +1756,7 @@ THRIVE_API void thrive_codegen(
 
     /* --- Pass 2: Emit .data Section --- */
     thrive_cg_emit_str(&ctx, "segment .data\n");
+    
     for (i = 0; i < ctx.globals_count; ++i)
     {
         if (ctx.globals[i].section == SECTION_DATA)
