@@ -66,10 +66,6 @@ GetCommandLineA(void);
 #endif /* _WINDOWS_ */
 
 #include "thrive.h"
-#include "thrive_tokenizer.h"
-#include "thrive_ast.h"
-#include "thrive_ast_optimizer.h"
-#include "thrive_codegen.h"
 
 #define TOKENS_CAPACITY 1024
 #define AST_CAPACITY 1024
