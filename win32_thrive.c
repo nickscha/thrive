@@ -81,7 +81,7 @@ QueryPerformanceFrequency(LARGE_INTEGER *lpFrequency);
 #define AST_CAPACITY 1024
 #define CODE_CAPACITY 8192
 
-THRIVE_API u32 my_strlen(u8 *str)
+THRIVE_API u32 win32_strlen(u8 *str)
 {
     u8 *s = str;
 
@@ -89,6 +89,7 @@ THRIVE_API u32 my_strlen(u8 *str)
     {
         s++;
     }
+
     return (u32)(s - str);
 }
 
@@ -150,6 +151,10 @@ THRIVE_API void win32_print_ms(void *hConsole, f64 ms)
     WriteConsoleA(hConsole, buf, (unsigned long)(p - buf), &written, 0);
 }
 
+/* ############################################################################
+ * # Thrive Compilation
+ * ############################################################################
+ */
 THRIVE_API void thrive_compile(void)
 {
 
@@ -196,39 +201,30 @@ THRIVE_API void thrive_compile(void)
  */
 THRIVE_API i32 start(i32 argc, u8 **argv)
 {
-    LARGE_INTEGER freq, t0, t1;
-    i32 i;
-
     unsigned long written;
     void *hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
 
+    LARGE_INTEGER freq;
+    LARGE_INTEGER time_start;
+    LARGE_INTEGER time_end;
+
+    /* Print usage */
     if (argc < 2)
     {
         WriteConsoleA(hConsole, "[thrive] usage: ", 16, &written, 0);
-        WriteConsoleA(hConsole, argv[0], (unsigned long)my_strlen(argv[0]), &written, 0);
+        WriteConsoleA(hConsole, argv[0], (unsigned long)win32_strlen(argv[0]), &written, 0);
         WriteConsoleA(hConsole, " code.thrive\n", 13, &written, 0);
         return 1;
     }
-    else
-    {
-        WriteConsoleA(hConsole, "[thrive] cli arguments:\n", 24, &written, 0);
-
-        for (i = 0; i < argc; ++i)
-        {
-            WriteConsoleA(hConsole, "[thrive] - ", 11, &written, 0);
-            WriteConsoleA(hConsole, argv[i], (unsigned long)my_strlen(argv[i]), &written, 0);
-            WriteConsoleA(hConsole, "\n", 1, &written, 0);
-        }
-    }
 
     QueryPerformanceFrequency(&freq);
-    QueryPerformanceCounter(&t0);
+    QueryPerformanceCounter(&time_start);
 
     thrive_compile();
 
-    QueryPerformanceCounter(&t1);
+    QueryPerformanceCounter(&time_end);
 
-    win32_print_ms(hConsole, win32_elapsed_ms(&t0, &t1, &freq));
+    win32_print_ms(hConsole, win32_elapsed_ms(&time_start, &time_end, &freq));
 
     return 0;
 }
