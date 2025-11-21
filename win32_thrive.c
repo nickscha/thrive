@@ -73,6 +73,8 @@ WIN32_API(int)
 QueryPerformanceCounter(LARGE_INTEGER *lpPerformanceCount);
 WIN32_API(int)
 QueryPerformanceFrequency(LARGE_INTEGER *lpFrequency);
+WIN32_API(int)
+SetConsoleTextAttribute(void *hConsoleOutput, unsigned short wAttributes);
 #endif /* _WINDOWS_ */
 
 #include "thrive.h"
@@ -108,49 +110,100 @@ THRIVE_API void win32_print_ms(void *hConsole, u8 *name, u32 name_length, f64 ms
 {
     unsigned long written;
 
-    u8 buf[64];
+    u8 buf[128];
     u8 tmp[16];
     u8 *p = buf;
+    u32 i;
+    f64 ms_mid = 0.02;
+    f64 ms_high = 0.1;
 
-    i32 whole = (i32)ms;
-    i32 frac = (i32)((ms - (f64)whole) * 1000000.0); /* 6 decimals */
-    i32 n = 0;
+    /* header: "[thrive] " */
+    *p++ = '[';
+    *p++ = 't';
+    *p++ = 'h';
+    *p++ = 'r';
+    *p++ = 'i';
+    *p++ = 'v';
+    *p++ = 'e';
+    *p++ = ']';
+    *p++ = ' ';
 
-    if (frac < 0)
+    for (i = 0; i < name_length; ++i)
     {
-        frac = 0;
+        *p++ = name[i];
     }
 
-    do
-    {
-        tmp[n++] = (u8)('0' + (whole % 10));
-        whole /= 10;
-    } while (whole > 0);
+    *p++ = ':';
+    *p++ = ' ';
 
-    while (n--)
+    /* print ms with 6 decimals */
     {
-        *p++ = tmp[n];
+        i32 whole = (i32)ms;
+        i32 frac = (i32)((ms - (f64)whole) * 1000000.0); /* 6 decimals */
+        i32 n = 0;
+
+        if (frac < 0)
+        {
+            frac = 0;
+        }
+        else if (frac > 999999)
+        {
+            frac = 999999;
+        }
+
+        /* convert integer part */
+        do
+        {
+            tmp[n++] = (u8)('0' + (whole % 10));
+            whole /= 10;
+        } while (whole > 0);
+
+        while (n--)
+        {
+            *p++ = tmp[n];
+        }
+
+        *p++ = '.';
+
+        /* 6 padded decimals */
+        *p++ = (u8)('0' + (frac / 100000) % 10);
+        *p++ = (u8)('0' + (frac / 10000) % 10);
+        *p++ = (u8)('0' + (frac / 1000) % 10);
+        *p++ = (u8)('0' + (frac / 100) % 10);
+        *p++ = (u8)('0' + (frac / 10) % 10);
+        *p++ = (u8)('0' + (frac % 10));
     }
 
-    *p++ = '.';
-
-    /* write 6 fixed digits with zero padding */
-    *p++ = (u8)('0' + (frac / 100000) % 10);
-    *p++ = (u8)('0' + (frac / 10000) % 10);
-    *p++ = (u8)('0' + (frac / 1000) % 10);
-    *p++ = (u8)('0' + (frac / 100) % 10);
-    *p++ = (u8)('0' + (frac / 10) % 10);
-    *p++ = (u8)('0' + (frac % 10));
-
+    /* suffix */
     *p++ = ' ';
     *p++ = 'm';
     *p++ = 's';
     *p++ = '\n';
 
-    WriteConsoleA(hConsole, "[thrive] ", 9, &written, 0);
-    WriteConsoleA(hConsole, name, name_length, &written, 0);
-    WriteConsoleA(hConsole, ": ", 2, &written, 0);
-    WriteConsoleA(hConsole, buf, (unsigned long)(p - buf), &written, 0);
+    {
+        u32 total_len = (u32)(p - buf);
+        u32 remain = total_len - 8;
+        u32 cut = (remain > 15 ? 15 : remain);
+        u32 offset;
+
+        /* color the "[thrive]" part only */
+        SetConsoleTextAttribute(hConsole, 9);         /* blue */
+        WriteConsoleA(hConsole, buf, 8, &written, 0); /* writes "[thrive]" */
+        SetConsoleTextAttribute(hConsole, 7);         /* default */
+
+        WriteConsoleA(hConsole, buf + 8, cut, &written, 0);
+
+        offset = 8 + cut;
+
+        SetConsoleTextAttribute(
+            hConsole, ms >= ms_high  ? 12 /* red */
+                      : ms >= ms_mid ? 14 /* yellow */
+                                     : 10 /* green*/);
+
+        WriteConsoleA(hConsole, buf + offset, total_len - offset, &written, 0);
+
+        SetConsoleTextAttribute(hConsole, 7); /* default */
+    }
 }
 
 /* ############################################################################
@@ -185,6 +238,7 @@ THRIVE_API void thrive_compile(void)
 
     (void)thrive_token_type_names;
 
+    /* Query the CPU Frequency once */
     QueryPerformanceFrequency(&freq);
 
     /* Generate Tokens */
