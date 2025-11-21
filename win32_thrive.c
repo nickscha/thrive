@@ -104,7 +104,7 @@ THRIVE_API f64 win32_elapsed_ms(
     return (delta * 1000.0) / (f64)freq->LowPart;
 }
 
-THRIVE_API void win32_print_ms(void *hConsole, f64 ms)
+THRIVE_API void win32_print_ms(void *hConsole, u8 *name, u32 name_length, f64 ms)
 {
     unsigned long written;
 
@@ -147,7 +147,9 @@ THRIVE_API void win32_print_ms(void *hConsole, f64 ms)
     *p++ = 's';
     *p++ = '\n';
 
-    WriteConsoleA(hConsole, "[thrive] time: ", 15, &written, 0);
+    WriteConsoleA(hConsole, "[thrive] ", 9, &written, 0);
+    WriteConsoleA(hConsole, name, name_length, &written, 0);
+    WriteConsoleA(hConsole, ": ", 2, &written, 0);
     WriteConsoleA(hConsole, buf, (unsigned long)(p - buf), &written, 0);
 }
 
@@ -174,22 +176,58 @@ THRIVE_API void thrive_compile(void)
     u8 code_asm[CODE_CAPACITY];
     u32 code_asm_size = 0;
 
+    void *hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+    LARGE_INTEGER freq;
+    LARGE_INTEGER time_start;
+    LARGE_INTEGER time_end;
+    f64 ms_current = 0.0;
+    f64 ms_total = 0.0;
+
     (void)thrive_token_type_names;
 
+    QueryPerformanceFrequency(&freq);
+
     /* Generate Tokens */
+    QueryPerformanceCounter(&time_start);
     thrive_tokenizer(code, code_size, tokens, TOKENS_CAPACITY, &tokens_size);
+    QueryPerformanceCounter(&time_end);
+    ms_current = win32_elapsed_ms(&time_start, &time_end, &freq);
+    ms_total += ms_current;
+    win32_print_ms(hConsole, (u8 *)"time_token  ", 12, ms_current);
 
     /* Generate AST */
+    QueryPerformanceCounter(&time_start);
     thrive_ast_parse(tokens, tokens_size, ast, AST_CAPACITY, &ast_size);
+    QueryPerformanceCounter(&time_end);
+    ms_current = win32_elapsed_ms(&time_start, &time_end, &freq);
+    ms_total += ms_current;
+    win32_print_ms(hConsole, (u8 *)"time_ast    ", 12, ms_current);
 
     /* Generate Assembly */
+    QueryPerformanceCounter(&time_start);
     thrive_codegen(ast, ast_size, code_asm, CODE_CAPACITY, &code_asm_size);
+    QueryPerformanceCounter(&time_end);
+    ms_current = win32_elapsed_ms(&time_start, &time_end, &freq);
+    ms_total += ms_current;
+    win32_print_ms(hConsole, (u8 *)"time_asm    ", 12, ms_current);
 
     /* Optimize AST */
+    QueryPerformanceCounter(&time_start);
     thrive_ast_optimize(ast, &ast_size);
+    QueryPerformanceCounter(&time_end);
+    ms_current = win32_elapsed_ms(&time_start, &time_end, &freq);
+    ms_total += ms_current;
+    win32_print_ms(hConsole, (u8 *)"time_ast_opt", 12, ms_current);
 
     /* Generate Optimized Assembly */
+    QueryPerformanceCounter(&time_start);
     thrive_codegen(ast, ast_size, code_asm, CODE_CAPACITY, &code_asm_size);
+    QueryPerformanceCounter(&time_end);
+    ms_current = win32_elapsed_ms(&time_start, &time_end, &freq);
+    ms_total += ms_current;
+    win32_print_ms(hConsole, (u8 *)"time_asm_opt", 12, ms_current);
+
+    win32_print_ms(hConsole, (u8 *)"time_total  ", 12, ms_total);
 }
 
 /* ############################################################################
@@ -204,10 +242,6 @@ THRIVE_API i32 start(i32 argc, u8 **argv)
     unsigned long written;
     void *hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
 
-    LARGE_INTEGER freq;
-    LARGE_INTEGER time_start;
-    LARGE_INTEGER time_end;
-
     /* Print usage */
     if (argc < 2)
     {
@@ -217,14 +251,8 @@ THRIVE_API i32 start(i32 argc, u8 **argv)
         return 1;
     }
 
-    QueryPerformanceFrequency(&freq);
-    QueryPerformanceCounter(&time_start);
-
+    /* Compile */
     thrive_compile();
-
-    QueryPerformanceCounter(&time_end);
-
-    win32_print_ms(hConsole, win32_elapsed_ms(&time_start, &time_end, &freq));
 
     return 0;
 }
