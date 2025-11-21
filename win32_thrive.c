@@ -56,13 +56,23 @@ void *memcpy(void *dest, void *src, unsigned int count)
 
 #define STD_OUTPUT_HANDLE ((unsigned long)-11)
 
+typedef struct LARGE_INTEGER
+{
+    unsigned long LowPart;
+    long HighPart;
+
+} LARGE_INTEGER;
+
 WIN32_API(void *)
 GetStdHandle(unsigned long nStdHandle);
 WIN32_API(int)
 WriteConsoleA(void *hConsoleOutput, void *lpBuffer, unsigned long nNumberOfCharsToWrite, unsigned long *lpNumberOfCharsWritten, void *lpReserved);
 WIN32_API(char *)
 GetCommandLineA(void);
-
+WIN32_API(int)
+QueryPerformanceCounter(LARGE_INTEGER *lpPerformanceCount);
+WIN32_API(int)
+QueryPerformanceFrequency(LARGE_INTEGER *lpFrequency);
 #endif /* _WINDOWS_ */
 
 #include "thrive.h"
@@ -80,6 +90,64 @@ THRIVE_API u32 my_strlen(u8 *str)
         s++;
     }
     return (u32)(s - str);
+}
+
+THRIVE_API f64 win32_elapsed_ms(
+    LARGE_INTEGER *start,
+    LARGE_INTEGER *end,
+    LARGE_INTEGER *freq)
+{
+    f64 delta = ((f64)end->HighPart - (f64)start->HighPart) * 4294967296.0 +
+                ((f64)end->LowPart - (f64)start->LowPart);
+
+    return (delta * 1000.0) / (f64)freq->LowPart;
+}
+
+THRIVE_API void win32_print_ms(void *hConsole, f64 ms)
+{
+    unsigned long written;
+
+    u8 buf[64];
+    u8 tmp[16];
+    u8 *p = buf;
+
+    i32 whole = (i32)ms;
+    i32 frac = (i32)((ms - (f64)whole) * 1000000.0); /* 6 decimals */
+    i32 n = 0;
+
+    if (frac < 0)
+    {
+        frac = 0;
+    }
+
+    do
+    {
+        tmp[n++] = (u8)('0' + (whole % 10));
+        whole /= 10;
+    } while (whole > 0);
+
+    while (n--)
+    {
+        *p++ = tmp[n];
+    }
+
+    *p++ = '.';
+
+    /* write 6 fixed digits with zero padding */
+    *p++ = (u8)('0' + (frac / 100000) % 10);
+    *p++ = (u8)('0' + (frac / 10000) % 10);
+    *p++ = (u8)('0' + (frac / 1000) % 10);
+    *p++ = (u8)('0' + (frac / 100) % 10);
+    *p++ = (u8)('0' + (frac / 10) % 10);
+    *p++ = (u8)('0' + (frac % 10));
+
+    *p++ = ' ';
+    *p++ = 'm';
+    *p++ = 's';
+    *p++ = '\n';
+
+    WriteConsoleA(hConsole, "[thrive] time: ", 15, &written, 0);
+    WriteConsoleA(hConsole, buf, (unsigned long)(p - buf), &written, 0);
 }
 
 THRIVE_API void thrive_compile(void)
@@ -128,22 +196,39 @@ THRIVE_API void thrive_compile(void)
  */
 THRIVE_API i32 start(i32 argc, u8 **argv)
 {
+    LARGE_INTEGER freq, t0, t1;
     i32 i;
 
     unsigned long written;
     void *hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
 
-    WriteConsoleA(hConsole, "cli arguments:\n", 15, &written, 0);
-
-    for (i = 0; i < argc; ++i)
+    if (argc < 2)
     {
-        WriteConsoleA(hConsole, argv[i], (unsigned long)my_strlen(argv[i]), &written, 0);
-        WriteConsoleA(hConsole, "\n", 1, &written, 0);
+        WriteConsoleA(hConsole, "[thrive] usage: ", 16, &written, 0);
+        WriteConsoleA(hConsole, argv[0], (unsigned long)my_strlen(argv[0]), &written, 0);
+        WriteConsoleA(hConsole, " code.thrive\n", 13, &written, 0);
+        return 1;
+    }
+    else
+    {
+        WriteConsoleA(hConsole, "[thrive] cli arguments:\n", 24, &written, 0);
+
+        for (i = 0; i < argc; ++i)
+        {
+            WriteConsoleA(hConsole, "[thrive] - ", 11, &written, 0);
+            WriteConsoleA(hConsole, argv[i], (unsigned long)my_strlen(argv[i]), &written, 0);
+            WriteConsoleA(hConsole, "\n", 1, &written, 0);
+        }
     }
 
-    WriteConsoleA(hConsole, "[thrive] Start Compilation\n", 27, &written, 0);
+    QueryPerformanceFrequency(&freq);
+    QueryPerformanceCounter(&t0);
+
     thrive_compile();
-    WriteConsoleA(hConsole, "[thrive] Ended Compilation\n", 27, &written, 0);
+
+    QueryPerformanceCounter(&t1);
+
+    win32_print_ms(hConsole, win32_elapsed_ms(&t0, &t1, &freq));
 
     return 0;
 }
