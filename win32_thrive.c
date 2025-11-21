@@ -57,6 +57,7 @@ void *memcpy(void *dest, void *src, unsigned int count)
 /* Memory Management */
 #define MEM_COMMIT 0x00001000
 #define MEM_RESERVE 0x00002000
+#define MEM_RELEASE 0x00008000
 #define PAGE_READWRITE 0x04
 
 /* Console IO */
@@ -68,11 +69,14 @@ void *memcpy(void *dest, void *src, unsigned int count)
 #define FILE_SHARE_READ 0x00000001
 #define OPEN_EXISTING 3
 #define FILE_ATTRIBUTE_NORMAL 0x00000080
+#define FILE_FLAG_SEQUENTIAL_SCAN 0x08000000
 #define INVALID_FILE_SIZE ((unsigned long)0xFFFFFFFF)
 
 /* Memory Management */
 WIN32_API(void *)
-VirtualAlloc(void *lpAddress, unsigned int dwSize, unsigned long flAllocationType, unsigned longflProtect);
+VirtualAlloc(void *lpAddress, unsigned int dwSize, unsigned long flAllocationType, unsigned long flProtect);
+WIN32_API(int)
+VirtualFree(void *lpAddress, unsigned int dwSize, unsigned long dwFreeType);
 
 /* Console IO */
 WIN32_API(void *)
@@ -138,40 +142,23 @@ THRIVE_API f64 win32_elapsed_ms(
     return (delta * 1000.0) / (f64)freq->LowPart;
 }
 
-THRIVE_API u8 win32_io_file_size(
-    char *filename, /* The filename/path of which to return the file size */
-    u32 *file_size  /* The gathered file size in bytes */
-)
-{
-    void *hFile = CreateFileA(filename, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
-
-    if (hFile == INVALID_HANDLE)
-    {
-        return 0;
-    }
-
-    *file_size = GetFileSize(hFile, 0);
-
-    if (!CloseHandle(hFile) || *file_size == INVALID_FILE_SIZE)
-    {
-        return 0;
-    }
-
-    return 1;
-}
-
-THRIVE_API u8 win32_io_file_read(
-    char *filename,           /* The filename/path to read into the file_buffer */
-    u8 *file_buffer,          /* The user provided file_buffer large enough to hold the file contents */
-    u32 file_buffer_capacity, /* The capacity/max site of the file_buffer */
-    u32 *file_buffer_size     /* The total number of bytes read by this function */
-)
+THRIVE_API u8 *win32_io_file_read(
+    char *filename,
+    u32 *file_size_out)
 {
     void *hFile;
     unsigned long fileSize;
     unsigned long bytesRead;
+    u8 *buffer;
 
-    hFile = CreateFileA(filename, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
+    hFile = CreateFileA(
+        filename,
+        GENERIC_READ,
+        FILE_SHARE_READ,
+        0,
+        OPEN_EXISTING,
+        FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN,
+        0);
 
     if (hFile == INVALID_HANDLE)
     {
@@ -180,18 +167,33 @@ THRIVE_API u8 win32_io_file_read(
 
     fileSize = GetFileSize(hFile, 0);
 
-    if (fileSize == INVALID_FILE_SIZE || file_buffer_capacity < fileSize + 1 || !ReadFile(hFile, file_buffer, fileSize, &bytesRead, 0) || bytesRead != fileSize)
+    if (fileSize == INVALID_FILE_SIZE)
     {
         CloseHandle(hFile);
         return 0;
     }
 
-    file_buffer[fileSize] = '\0';
-    *file_buffer_size = fileSize;
+    buffer = (u8 *)VirtualAlloc(0, fileSize + 1, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+
+    if (!buffer)
+    {
+        CloseHandle(hFile);
+        return 0;
+    }
+
+    if (!ReadFile(hFile, buffer, fileSize, &bytesRead, 0) || bytesRead != fileSize)
+    {
+        CloseHandle(hFile);
+        VirtualFree(buffer, 0, MEM_RELEASE);
+        return 0;
+    }
+
+    buffer[fileSize] = '\0';
+    *file_size_out = fileSize;
 
     CloseHandle(hFile);
 
-    return 1;
+    return buffer;
 }
 
 THRIVE_API void win32_io_print_ms(void *hConsole, u8 *name, u32 name_length, f64 ms, f64 ms_total)
@@ -203,7 +205,7 @@ THRIVE_API void win32_io_print_ms(void *hConsole, u8 *name, u32 name_length, f64
     u8 *p = buf;
     u32 i;
     f64 ms_mid = 0.02;
-    f64 ms_high = 0.2;
+    f64 ms_high = 0.4;
 
     /* header: "[thrive] " */
     *p++ = '[';
@@ -347,15 +349,13 @@ THRIVE_API void win32_io_print_ms(void *hConsole, u8 *name, u32 name_length, f64
  */
 typedef enum win32_thrive_metrics
 {
-    WIN32_THRIVE_METRIC_MEMORY_ALLOCATION = 0,
-    WIN32_THRIVE_METRIC_IO_FILE_SIZE,
-    WIN32_THRIVE_METRIC_IO_FILE_READ,
-    WIN32_THRIVE_METRIC_TOKENIZATION,
-    WIN32_THRIVE_METRIC_AST,
-    WIN32_THRIVE_METRIC_ASM,
-    WIN32_THRIVE_METRIC_AST_OPTIMIZED,
-    WIN32_THRIVE_METRIC_ASM_OPTIMIZED,
-    WIN32_THRIVE_METRIC_COUNT
+    METRIC_IO_FILE_READ = 0,
+    METRIC_TOKENIZATION,
+    METRIC_AST,
+    METRIC_ASM,
+    METRIC_AST_OPTIMIZED,
+    METRIC_ASM_OPTIMIZED,
+    METRIC_COUNT
 
 } win32_thrive_metrics;
 
@@ -392,29 +392,29 @@ THRIVE_API void thrive_compile(win32_thrive_metric *metrics)
     (void)thrive_token_type_names;
 
     /* Generate Tokens */
-    QueryPerformanceCounter(&metrics[WIN32_THRIVE_METRIC_TOKENIZATION].time_start);
+    QueryPerformanceCounter(&metrics[METRIC_TOKENIZATION].time_start);
     thrive_tokenizer(code, code_size, tokens, TOKENS_CAPACITY, &tokens_size);
-    QueryPerformanceCounter(&metrics[WIN32_THRIVE_METRIC_TOKENIZATION].time_end);
+    QueryPerformanceCounter(&metrics[METRIC_TOKENIZATION].time_end);
 
     /* Generate AST */
-    QueryPerformanceCounter(&metrics[WIN32_THRIVE_METRIC_AST].time_start);
+    QueryPerformanceCounter(&metrics[METRIC_AST].time_start);
     thrive_ast_parse(tokens, tokens_size, ast, AST_CAPACITY, &ast_size);
-    QueryPerformanceCounter(&metrics[WIN32_THRIVE_METRIC_AST].time_end);
+    QueryPerformanceCounter(&metrics[METRIC_AST].time_end);
 
     /* Generate Assembly */
-    QueryPerformanceCounter(&metrics[WIN32_THRIVE_METRIC_ASM].time_start);
+    QueryPerformanceCounter(&metrics[METRIC_ASM].time_start);
     thrive_codegen(ast, ast_size, code_asm, CODE_CAPACITY, &code_asm_size);
-    QueryPerformanceCounter(&metrics[WIN32_THRIVE_METRIC_ASM].time_end);
+    QueryPerformanceCounter(&metrics[METRIC_ASM].time_end);
 
     /* Optimize AST */
-    QueryPerformanceCounter(&metrics[WIN32_THRIVE_METRIC_AST_OPTIMIZED].time_start);
+    QueryPerformanceCounter(&metrics[METRIC_AST_OPTIMIZED].time_start);
     thrive_ast_optimize(ast, &ast_size);
-    QueryPerformanceCounter(&metrics[WIN32_THRIVE_METRIC_AST_OPTIMIZED].time_end);
+    QueryPerformanceCounter(&metrics[METRIC_AST_OPTIMIZED].time_end);
 
     /* Generate Optimized Assembly */
-    QueryPerformanceCounter(&metrics[WIN32_THRIVE_METRIC_ASM_OPTIMIZED].time_start);
+    QueryPerformanceCounter(&metrics[METRIC_ASM_OPTIMIZED].time_start);
     thrive_codegen(ast, ast_size, code_asm, CODE_CAPACITY, &code_asm_size);
-    QueryPerformanceCounter(&metrics[WIN32_THRIVE_METRIC_ASM_OPTIMIZED].time_end);
+    QueryPerformanceCounter(&metrics[METRIC_ASM_OPTIMIZED].time_end);
 }
 
 /* ############################################################################
@@ -431,10 +431,9 @@ THRIVE_API i32 start(i32 argc, u8 **argv)
 
     LARGE_INTEGER freq;
 
-    win32_thrive_metric metrics[WIN32_THRIVE_METRIC_COUNT];
+    win32_thrive_metric metrics[METRIC_COUNT];
 
     u32 file_size = 0;
-    u32 file_size_read = 0;
     u8 *file_memory;
     char *file_name;
 
@@ -452,40 +451,18 @@ THRIVE_API i32 start(i32 argc, u8 **argv)
 
     file_name = (char *)argv[1];
 
-    /* Get File Size */
-    QueryPerformanceCounter(&metrics[WIN32_THRIVE_METRIC_IO_FILE_SIZE].time_start);
-    if (!win32_io_file_size(file_name, &file_size) || file_size < 1)
-    {
-        SetConsoleTextAttribute(hConsole, 12); /* red */
-        WriteConsoleA(hConsole, "[thrive] Cannot obtain file_size or file is empty!", 50, &written, 0);
-        SetConsoleTextAttribute(hConsole, 7);
-        return 1;
-    }
-    QueryPerformanceCounter(&metrics[WIN32_THRIVE_METRIC_IO_FILE_SIZE].time_end);
+    /* Read entire file */
+    QueryPerformanceCounter(&metrics[METRIC_IO_FILE_READ].time_start);
+    file_memory = win32_io_file_read(file_name, &file_size);
+    QueryPerformanceCounter(&metrics[METRIC_IO_FILE_READ].time_end);
 
-    QueryPerformanceCounter(&metrics[WIN32_THRIVE_METRIC_MEMORY_ALLOCATION].time_start);
-    file_memory = (u8 *)VirtualAlloc(0, file_size + 1, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
-    QueryPerformanceCounter(&metrics[WIN32_THRIVE_METRIC_MEMORY_ALLOCATION].time_end);
-
-    /* Aquire Memory for reading File */
     if (!file_memory)
-    {
-        SetConsoleTextAttribute(hConsole, 12); /* red */
-        WriteConsoleA(hConsole, "[thrive] Cannot allocate enough memory!", 39, &written, 0);
-        SetConsoleTextAttribute(hConsole, 7);
-        return 1;
-    }
-
-    /* Read File */
-    QueryPerformanceCounter(&metrics[WIN32_THRIVE_METRIC_IO_FILE_READ].time_start);
-    if (!win32_io_file_read(file_name, file_memory, file_size + 1, &file_size_read))
     {
         SetConsoleTextAttribute(hConsole, 12); /* red */
         WriteConsoleA(hConsole, "[thrive] Cannot read file!", 26, &written, 0);
         SetConsoleTextAttribute(hConsole, 7);
         return 1;
     }
-    QueryPerformanceCounter(&metrics[WIN32_THRIVE_METRIC_IO_FILE_READ].time_end);
 
     /* Compile */
     thrive_compile(metrics);
@@ -493,13 +470,11 @@ THRIVE_API i32 start(i32 argc, u8 **argv)
     /* Gather metrics */
     {
         u32 i;
-        f64 metric_times[WIN32_THRIVE_METRIC_COUNT];
+        f64 metric_times[METRIC_COUNT];
         f64 metric_times_total = 0.0;
 
         /* Has to match with enum structure */
         u8 *win32_thrive_metric_names[] = {
-            (u8 *)"time_memory_alloc ",
-            (u8 *)"time_io_file_size ",
             (u8 *)"time_io_file_read ",
             (u8 *)"time_tokenization ",
             (u8 *)"time_ast          ",
@@ -508,7 +483,7 @@ THRIVE_API i32 start(i32 argc, u8 **argv)
             (u8 *)"time_asm_optimized"};
 
         /* Compute total */
-        for (i = 0; i < WIN32_THRIVE_METRIC_COUNT; ++i)
+        for (i = 0; i < METRIC_COUNT; ++i)
         {
             f64 elapsed_ms = win32_elapsed_ms(&metrics[i].time_start, &metrics[i].time_end, &freq);
             metric_times[i] = elapsed_ms;
@@ -516,7 +491,7 @@ THRIVE_API i32 start(i32 argc, u8 **argv)
         }
 
         /* Metric time */
-        for (i = 0; i < WIN32_THRIVE_METRIC_COUNT; ++i)
+        for (i = 0; i < METRIC_COUNT; ++i)
         {
             u8 *metric_name = win32_thrive_metric_names[i];
             win32_io_print_ms(hConsole, metric_name, win32_strlen(metric_name), metric_times[i], metric_times_total);
