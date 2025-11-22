@@ -69,6 +69,8 @@ void *memcpy(void *dest, void *src, unsigned int count)
 #define GENERIC_WRITE (0x40000000L)
 #define CREATE_ALWAYS 2
 #define FILE_SHARE_READ 0x00000001
+#define FILE_SHARE_WRITE 0x00000002
+#define FILE_SHARE_DELETE 0x00000004
 #define OPEN_EXISTING 3
 #define FILE_ATTRIBUTE_NORMAL 0x00000080
 #define FILE_ATTRIBUTE_TEMPORARY 0x00000100
@@ -121,6 +123,8 @@ WIN32_API(int)
 CloseHandle(void *hObject);
 WIN32_API(int)
 GetFileAttributesExA(char *lpFileName, GET_FILEEX_INFO_LEVELS fInfoLevelId, void *lpFileInformation);
+WIN32_API(long)
+CompareFileTime(FILETIME *lpFileTime1, FILETIME *lpFileTime2);
 WIN32_API(void *)
 CreateFileA(char *lpFileName, unsigned long dwDesiredAccess, unsigned long dwShareMode, void *, unsigned long dwCreationDisposition, unsigned long dwFlagsAndAttributes, void *hTemplateFile);
 WIN32_API(unsigned long)
@@ -151,6 +155,9 @@ QueryPerformanceFrequency(LARGE_INTEGER *lpFrequency);
 WIN32_API(int)
 SetConsoleTextAttribute(void *hConsoleOutput, unsigned short wAttributes);
 
+WIN32_API(void)
+Sleep(unsigned long dwMilliseconds);
+
 #endif /* _WINDOWS_ */
 
 #include "thrive.h"
@@ -175,65 +182,76 @@ THRIVE_API THRIVE_INLINE FILETIME win32_io_file_mod_time(char *file)
     return GetFileAttributesExA(file, GetFileExInfoStandard, &fad) ? fad.ftLastWriteTime : empty;
 }
 
-THRIVE_API u8 *win32_io_file_read(
-    char *filename,
-    u32 *file_size_out)
+u8 *win32_io_file_read(char *filename, u32 *file_size_out)
 {
-    void *hFile;
-    unsigned long fileSize;
-    unsigned long bytesRead;
-    u8 *buffer = 0;
+    void *hFile = INVALID_HANDLE;
+    unsigned long fileSize = 0;
+    unsigned long bytesRead = 0;
 
-    hFile = CreateFileA(
-        filename,
-        GENERIC_READ,
-        FILE_SHARE_READ,
-        0,
-        OPEN_EXISTING,
-        FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN,
-        0);
+    u8 *buffer = 0;
+    i32 attempt;
+
+    /* Retry loop for hot-reload: file might be locked or partially written */
+    for (attempt = 0; attempt < 4; ++attempt)
+    {
+        hFile = CreateFileA(
+            filename,
+            GENERIC_READ,
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, /* Hot-reload safe */
+            (void *)0,
+            OPEN_EXISTING,
+            FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN,
+            (void *)0);
+
+        if (hFile != INVALID_HANDLE)
+        {
+            break;
+        }
+
+        Sleep(5); /* Small delay, adjust as needed */
+    }
 
     if (hFile == INVALID_HANDLE)
     {
-        return 0;
+        return (void *)0;
     }
 
-    fileSize = GetFileSize(hFile, 0);
+    fileSize = GetFileSize(hFile, (void *)0);
 
-    if (fileSize == INVALID_FILE_SIZE)
+    if (fileSize == INVALID_FILE_SIZE || fileSize == 0)
     {
         CloseHandle(hFile);
-        return 0;
+        return (void *)0;
     }
 
     if (fileSize <= FILE_MMAP_THRESHOLD)
     {
-        /* Small file: normal ReadFile */
-        buffer = (u8 *)VirtualAlloc(0, fileSize + 1, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+        /* Small file: read normally */
+        buffer = (u8 *)VirtualAlloc((void *)0, fileSize + 1, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
         if (!buffer)
         {
             CloseHandle(hFile);
-            return 0;
+            return (void *)0;
         }
 
-        if (!ReadFile(hFile, buffer, fileSize, &bytesRead, 0) || bytesRead != fileSize)
+        if (!ReadFile(hFile, buffer, fileSize, &bytesRead, (void *)0) || bytesRead != fileSize)
         {
-            CloseHandle(hFile);
             VirtualFree(buffer, 0, MEM_RELEASE);
-            return 0;
+            CloseHandle(hFile);
+            return (void *)0;
         }
 
-        buffer[fileSize] = '\0';
+        buffer[fileSize] = '\0'; /* Null-terminate */
     }
     else
     {
-        /* Large file: memory-mapped file */
-        void *hMap = CreateFileMappingA(hFile, 0, PAGE_READONLY, 0, 0, 0);
+        /* Large file: memory-mapped */
+        void *hMap = CreateFileMappingA(hFile, (void *)0, PAGE_READONLY, 0, 0, (void *)0);
 
         if (!hMap)
         {
             CloseHandle(hFile);
-            return 0;
+            return (void *)0;
         }
 
         buffer = (u8 *)MapViewOfFile(hMap, FILE_MAP_READ, 0, 0, 0);
@@ -243,7 +261,7 @@ THRIVE_API u8 *win32_io_file_read(
         if (!buffer)
         {
             CloseHandle(hFile);
-            return 0;
+            return (void *)0;
         }
     }
 
@@ -270,7 +288,9 @@ THRIVE_API u8 win32_io_file_write(
         0);
 
     if (hFile == INVALID_HANDLE)
+    {
         return 0;
+    }
 
     if (!WriteFile(hFile, buffer, buffer_size, &bytes_written, 0) ||
         bytes_written != buffer_size)
@@ -293,7 +313,7 @@ THRIVE_API void win32_io_print_ms(void *hConsole, u8 *name, u32 name_length, f64
     u8 *p = buf;
     u32 i;
     f64 ms_mid = 0.02;
-    f64 ms_high = 0.5;
+    f64 ms_high = 0.75;
 
     /* header: "[thrive] " */
     *p++ = '[';
@@ -533,39 +553,15 @@ THRIVE_API thrive_allocator *thrive_allocator_create(u32 source_size)
     return arena;
 }
 
-/* ############################################################################
- * # C-Like main function
- * ############################################################################
- *
- * The "mainCRTStartup" will read the command line arguments parsed and call
- * this function.
- */
-THRIVE_API i32 start(i32 argc, u8 **argv)
+THRIVE_API i32 compile(char *file_name, LARGE_INTEGER *freq)
 {
     unsigned long written = 0;
-    void *hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
-
-    LARGE_INTEGER freq;
-
     win32_thrive_metric metrics[METRIC_COUNT];
 
     u32 file_size = 0;
     u8 *file_memory;
-    char *file_name;
 
-    /* Print usage */
-    if (argc < 2)
-    {
-        WriteConsoleA(hConsole, "[thrive] usage: ", 16, &written, 0);
-        WriteConsoleA(hConsole, argv[0], (unsigned long)thrive_strlen(argv[0]), &written, 0);
-        WriteConsoleA(hConsole, " code.thrive\n", 13, &written, 0);
-        return 1;
-    }
-
-    /* Query the CPU Frequency once */
-    QueryPerformanceFrequency(&freq);
-
-    file_name = (char *)argv[1];
+    void *hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
 
     /* Read entire file */
     QueryPerformanceCounter(&metrics[METRIC_IO_FILE_READ].time_start);
@@ -591,6 +587,8 @@ THRIVE_API i32 start(i32 argc, u8 **argv)
             SetConsoleTextAttribute(hConsole, 12); /* red */
             WriteConsoleA(hConsole, "[thrive] Cannot allocate memory for compiler!", 45, &written, 0);
             SetConsoleTextAttribute(hConsole, 7);
+            VirtualFree(file_memory, 0, MEM_RELEASE);
+
             return 1;
         }
 
@@ -623,6 +621,9 @@ THRIVE_API i32 start(i32 argc, u8 **argv)
         QueryPerformanceCounter(&metrics[METRIC_IO_FILE_WRITE].time_start);
         win32_io_file_write("thrive_optimized.asm", ta->asm_code, ta->asm_code_size);
         QueryPerformanceCounter(&metrics[METRIC_IO_FILE_WRITE].time_end);
+
+        VirtualFree(file_memory, 0, MEM_RELEASE);
+        VirtualFree(ta, 0, MEM_RELEASE);
     }
 
     /* Gather metrics */
@@ -634,7 +635,7 @@ THRIVE_API i32 start(i32 argc, u8 **argv)
         /* Compute total */
         for (i = 0; i < METRIC_COUNT; ++i)
         {
-            f64 elapsed_ms = win32_elapsed_ms(&metrics[i].time_start, &metrics[i].time_end, &freq);
+            f64 elapsed_ms = win32_elapsed_ms(&metrics[i].time_start, &metrics[i].time_end, freq);
             metric_times[i] = elapsed_ms;
             metric_times_total += elapsed_ms;
         }
@@ -651,6 +652,62 @@ THRIVE_API i32 start(i32 argc, u8 **argv)
     }
 
     return 0;
+}
+
+/* ############################################################################
+ * # C-Like main function
+ * ############################################################################
+ *
+ * The "mainCRTStartup" will read the command line arguments parsed and call
+ * this function.
+ */
+THRIVE_API i32 start(i32 argc, u8 **argv)
+{
+    unsigned long written = 0;
+    void *hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+    char *file_name;
+
+    LARGE_INTEGER freq;
+
+    u8 conf_enable_hot_reload = argc == 3;
+
+    /* Print usage */
+    if (argc < 2)
+    {
+        WriteConsoleA(hConsole, "[thrive] usage: ", 16, &written, 0);
+        WriteConsoleA(hConsole, argv[0], (unsigned long)thrive_strlen(argv[0]), &written, 0);
+        WriteConsoleA(hConsole, " code.thrive\n", 13, &written, 0);
+        return 1;
+    }
+
+    /* Query the CPU Frequency once */
+    QueryPerformanceFrequency(&freq);
+
+    file_name = (char *)argv[1];
+
+    /* Compile , ... every time the source file changes */
+    if (conf_enable_hot_reload)
+    {
+
+        FILETIME file_time_previous = {0};
+
+        while (conf_enable_hot_reload)
+        {
+            FILETIME file_time_current = win32_io_file_mod_time(file_name);
+
+            if (CompareFileTime(&file_time_current, &file_time_previous) != 0)
+            {
+                WriteConsoleA(hConsole, "[thrive] recompile\n", 19, &written, 0);
+                compile(file_name, &freq);
+            }
+
+            Sleep(5);
+
+            file_time_previous = file_time_current;
+        }
+    }
+
+    return compile(file_name, &freq);
 }
 
 /* ############################################################################
