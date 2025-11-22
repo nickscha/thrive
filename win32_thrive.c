@@ -72,6 +72,10 @@ void *memcpy(void *dest, void *src, unsigned int count)
 #define FILE_FLAG_SEQUENTIAL_SCAN 0x08000000
 #define INVALID_FILE_SIZE ((unsigned long)0xFFFFFFFF)
 
+/* File Memory Mapping */
+#define PAGE_READONLY 0x02
+#define FILE_MAP_READ 0x0004
+
 /* Memory Management */
 WIN32_API(void *)
 VirtualAlloc(void *lpAddress, unsigned int dwSize, unsigned long flAllocationType, unsigned long flProtect);
@@ -95,6 +99,12 @@ WIN32_API(int)
 ReadFile(void *hFile, void *lpBuffer, unsigned long nNumberOfBytesToRead, unsigned long *lpNumberOfBytesRead, void *lpOverlapped);
 WIN32_API(unsigned long)
 GetFileSize(void *hFile, unsigned long *lpFileSizeHigh);
+
+/* File Memory Mapping */
+WIN32_API(void *)
+CreateFileMappingA(void *hFile, void *lpFileMappingAttributes, unsigned long flProtect, unsigned long dwMaximumSizeHigh, unsigned long dwMaximumSizeLow, char *lpName);
+WIN32_API(void *)
+MapViewOfFile(void *hFileMappingObject, unsigned long dwDesiredAccess, unsigned long dwFileOffsetHigh, unsigned long dwFileOffsetLow, unsigned long dwNumberOfBytesToMap);
 
 /* Performance Metrics */
 typedef struct LARGE_INTEGER
@@ -142,6 +152,8 @@ THRIVE_API f64 win32_elapsed_ms(
     return (delta * 1000.0) / (f64)freq->LowPart;
 }
 
+#define FILE_MMAP_THRESHOLD (1024 * 1024) /* 1 MB */
+
 THRIVE_API u8 *win32_io_file_read(
     char *filename,
     u32 *file_size_out)
@@ -149,7 +161,7 @@ THRIVE_API u8 *win32_io_file_read(
     void *hFile;
     unsigned long fileSize;
     unsigned long bytesRead;
-    u8 *buffer;
+    u8 *buffer = 0;
 
     hFile = CreateFileA(
         filename,
@@ -173,26 +185,49 @@ THRIVE_API u8 *win32_io_file_read(
         return 0;
     }
 
-    buffer = (u8 *)VirtualAlloc(0, fileSize + 1, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
-
-    if (!buffer)
+    if (fileSize <= FILE_MMAP_THRESHOLD)
     {
-        CloseHandle(hFile);
-        return 0;
+        /* Small file: normal ReadFile */
+        buffer = (u8 *)VirtualAlloc(0, fileSize + 1, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+        if (!buffer)
+        {
+            CloseHandle(hFile);
+            return 0;
+        }
+
+        if (!ReadFile(hFile, buffer, fileSize, &bytesRead, 0) || bytesRead != fileSize)
+        {
+            CloseHandle(hFile);
+            VirtualFree(buffer, 0, MEM_RELEASE);
+            return 0;
+        }
+
+        buffer[fileSize] = '\0';
+    }
+    else
+    {
+        /* Large file: memory-mapped file */
+        void *hMap = CreateFileMappingA(hFile, 0, PAGE_READONLY, 0, 0, 0);
+
+        if (!hMap)
+        {
+            CloseHandle(hFile);
+            return 0;
+        }
+
+        buffer = (u8 *)MapViewOfFile(hMap, FILE_MAP_READ, 0, 0, 0);
+
+        CloseHandle(hMap);
+
+        if (!buffer)
+        {
+            CloseHandle(hFile);
+            return 0;
+        }
     }
 
-    if (!ReadFile(hFile, buffer, fileSize, &bytesRead, 0) || bytesRead != fileSize)
-    {
-        CloseHandle(hFile);
-        VirtualFree(buffer, 0, MEM_RELEASE);
-        return 0;
-    }
-
-    buffer[fileSize] = '\0';
     *file_size_out = fileSize;
-
     CloseHandle(hFile);
-
     return buffer;
 }
 
