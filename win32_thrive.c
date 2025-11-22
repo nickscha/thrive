@@ -644,7 +644,7 @@ THRIVE_API i32 compile(char *file_name, LARGE_INTEGER *freq)
         for (i = 0; i < METRIC_COUNT; ++i)
         {
             u8 *metric_name = win32_thrive_metric_names[i];
-            win32_io_print_ms(hConsole, metric_name, thrive_strlen(metric_name), metric_times[i], metric_times_total);
+            win32_io_print_ms(hConsole, metric_name, thrive_string_length(metric_name), metric_times[i], metric_times_total);
         }
 
         /* Total time */
@@ -675,7 +675,7 @@ THRIVE_API i32 start(i32 argc, u8 **argv)
     if (argc < 2)
     {
         WriteConsoleA(hConsole, "[thrive] usage: ", 16, &written, 0);
-        WriteConsoleA(hConsole, argv[0], (unsigned long)thrive_strlen(argv[0]), &written, 0);
+        WriteConsoleA(hConsole, argv[0], (unsigned long)thrive_string_length(argv[0]), &written, 0);
         WriteConsoleA(hConsole, " code.thrive\n", 13, &written, 0);
         return 1;
     }

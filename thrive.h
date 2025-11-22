@@ -48,12 +48,12 @@ THRIVE_STATIC_ASSERT(sizeof(f64) == 8, f64_size_must_be_8);
  * # [SECTION] Helper Functions
  * #############################################################################
  */
-THRIVE_API THRIVE_INLINE u8 thrive_is_digit(u8 c)
+THRIVE_API THRIVE_INLINE u8 thrive_char_is_digit(u8 c)
 {
     return c >= '0' && c <= '9';
 }
 
-THRIVE_API THRIVE_INLINE u32 thrive_strlen(u8 *str)
+THRIVE_API THRIVE_INLINE u32 thrive_string_length(u8 *str)
 {
     u32 len = 0;
 
@@ -65,7 +65,7 @@ THRIVE_API THRIVE_INLINE u32 thrive_strlen(u8 *str)
     return len;
 }
 
-THRIVE_API THRIVE_INLINE u32 thrive_streq(u8 *a, u8 *b)
+THRIVE_API THRIVE_INLINE u32 thrive_string_equals(u8 *a, u8 *b)
 {
     while (*a && *b)
     {
@@ -81,7 +81,7 @@ THRIVE_API THRIVE_INLINE u32 thrive_streq(u8 *a, u8 *b)
     return (*a == *b);
 }
 
-THRIVE_API THRIVE_INLINE i32 thrive_strtol(u8 *str, u8 **endptr, i32 base)
+THRIVE_API THRIVE_INLINE i32 thrive_string_to_i32(u8 *str, u8 **endptr, i32 base)
 {
     i32 result = 0;
     i32 sign = 1;
@@ -164,7 +164,7 @@ THRIVE_API THRIVE_INLINE i32 thrive_strtol(u8 *str, u8 **endptr, i32 base)
     return sign * result;
 }
 
-THRIVE_API THRIVE_INLINE f64 thrive_strtod(u8 *str, u8 **endptr)
+THRIVE_API THRIVE_INLINE f64 thrive_string_to_f64(u8 *str, u8 **endptr)
 {
     f64 result = 0.0;
     f64 sign = 1.0;
@@ -183,7 +183,7 @@ THRIVE_API THRIVE_INLINE f64 thrive_strtod(u8 *str, u8 **endptr)
     }
 
     /* Integer part */
-    while (thrive_is_digit(*str) || *str == '_')
+    while (thrive_char_is_digit(*str) || *str == '_')
     {
         if (*str == '_')
         {
@@ -202,7 +202,7 @@ THRIVE_API THRIVE_INLINE f64 thrive_strtod(u8 *str, u8 **endptr)
 
         str++;
 
-        while (thrive_is_digit(*str) || *str == '_')
+        while (thrive_char_is_digit(*str) || *str == '_')
         {
             if (*str == '_')
             {
@@ -232,7 +232,7 @@ THRIVE_API THRIVE_INLINE f64 thrive_strtod(u8 *str, u8 **endptr)
             str++;
         }
 
-        while (thrive_is_digit(*str) || *str == '_')
+        while (thrive_char_is_digit(*str) || *str == '_')
         {
             if (*str == '_')
             {
@@ -581,12 +581,12 @@ THRIVE_API THRIVE_INLINE u8 thrive_tokenizer(
             if (is_float)
             {
                 tok->type = THRIVE_TOKEN_FLOAT;
-                tok->value.floating = thrive_strtod(start, (void *)0);
+                tok->value.floating = thrive_string_to_f64(start, (void *)0);
             }
             else
             {
                 tok->type = THRIVE_TOKEN_INTEGER;
-                tok->value.integer = thrive_strtol(start, (void *)0, 10);
+                tok->value.integer = thrive_string_to_i32(start, (void *)0, 10);
             }
 
             (*tokens_size)++;
@@ -1057,7 +1057,7 @@ THRIVE_API thrive_const_sym *thrive_ast_find_const(thrive_optimizer_ctx *ctx, u8
 
     do
     {
-        if (ctx->constants[idx].name[0] != 0 && thrive_streq(ctx->constants[idx].name, name))
+        if (ctx->constants[idx].name[0] != 0 && thrive_string_equals(ctx->constants[idx].name, name))
         {
             return &ctx->constants[idx];
         }
@@ -1570,7 +1570,7 @@ THRIVE_API thrive_symbol *thrive_find_global(thrive_codegen_ctx *ctx, u8 *name)
 
     for (i = 0; i < ctx->globals_count; ++i)
     {
-        if (thrive_streq(ctx->globals[i].name, name))
+        if (thrive_string_equals(ctx->globals[i].name, name))
         {
             return &ctx->globals[i];
         }
