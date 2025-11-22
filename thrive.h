@@ -857,7 +857,18 @@ THRIVE_API u16 thrive_ast_parse_primary(thrive_parser *p)
     if (thrive_ast_accept(p, THRIVE_TOKEN_LPAREN))
     {
         u16 inner = thrive_ast_parse_expr_bp(p, 0);
-        thrive_ast_accept(p, THRIVE_TOKEN_RPAREN); /* assume correct syntax */
+
+        /* Check for closing parenthesis */
+        if (!thrive_ast_accept(p, THRIVE_TOKEN_RPAREN))
+        {
+            /* TODO: Error handling */
+            thrive_token *token = thrive_ast_peek(p);
+            u8 *message = (u8 *)"Expected ')'";
+
+            (void)token;
+            (void)message;
+        }
+
         return inner;
     }
 

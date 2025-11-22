@@ -155,22 +155,6 @@ SetConsoleTextAttribute(void *hConsoleOutput, unsigned short wAttributes);
 
 #include "thrive.h"
 
-#define TOKENS_CAPACITY 1024
-#define AST_CAPACITY 1024
-#define CODE_CAPACITY 8192
-
-THRIVE_API u32 win32_strlen(u8 *str)
-{
-    u8 *s = str;
-
-    while (*s)
-    {
-        s++;
-    }
-
-    return (u32)(s - str);
-}
-
 THRIVE_API f64 win32_elapsed_ms(
     LARGE_INTEGER *start,
     LARGE_INTEGER *end,
@@ -309,7 +293,7 @@ THRIVE_API void win32_io_print_ms(void *hConsole, u8 *name, u32 name_length, f64
     u8 *p = buf;
     u32 i;
     f64 ms_mid = 0.02;
-    f64 ms_high = 0.4;
+    f64 ms_high = 0.5;
 
     /* header: "[thrive] " */
     *p++ = '[';
@@ -464,6 +448,16 @@ typedef enum win32_thrive_metrics
 
 } win32_thrive_metrics;
 
+/* Has to match with enum structure */
+static u8 *win32_thrive_metric_names[] = {
+    (u8 *)"time_io_file_read ",
+    (u8 *)"time_tokenization ",
+    (u8 *)"time_ast          ",
+    (u8 *)"time_asm          ",
+    (u8 *)"time_ast_optimized",
+    (u8 *)"time_asm_optimized",
+    (u8 *)"time_io_file_write"};
+
 typedef struct win32_thrive_metric
 {
     LARGE_INTEGER time_start;
@@ -475,56 +469,68 @@ typedef struct win32_thrive_metric
  * # Thrive Compilation
  * ############################################################################
  */
-THRIVE_API void thrive_compile(win32_thrive_metric *metrics)
+typedef struct thrive_allocator
 {
+    u8 *base;
+    u32 size;
 
-    u8 *code = (u8 *)"u32 a   = 42   \n"
-                     "u32 b   = 27   \n"
-                     "u32 res = a + b * 10.0f * (2 + 4)\n"
-                     "ret res        \n";
+    thrive_token *tokens;
+    u32 tokens_capacity;
+    u32 tokens_size;
 
-    u32 code_size = thrive_strlen(code);
+    thrive_ast *ast;
+    u32 ast_capacity;
+    u32 ast_size;
 
-    thrive_token tokens[TOKENS_CAPACITY];
-    u32 tokens_size = 0;
+    u8 *asm_code;
+    u32 asm_code_capacity;
+    u32 asm_code_size;
 
-    thrive_ast ast[AST_CAPACITY];
-    u32 ast_size = 0;
+} thrive_allocator;
 
-    u8 code_asm[CODE_CAPACITY];
-    u32 code_asm_size = 0;
+THRIVE_API thrive_allocator *thrive_allocator_create(u32 source_size)
+{
+    thrive_allocator *arena;
+    u32 max_tokens, max_ast_nodes, asm_size;
+    u32 total_size;
+    u8 *ptr;
 
-    (void)thrive_token_type_names;
+    /* Estimate */
+    max_tokens = source_size;
+    max_ast_nodes = source_size;
+    asm_size = source_size * 16;
 
-    /* Generate Tokens */
-    QueryPerformanceCounter(&metrics[METRIC_TOKENIZATION].time_start);
-    thrive_tokenizer(code, code_size, tokens, TOKENS_CAPACITY, &tokens_size);
-    QueryPerformanceCounter(&metrics[METRIC_TOKENIZATION].time_end);
+    total_size =
+        (u32)(sizeof(thrive_allocator) +
+              max_tokens * sizeof(thrive_token) +
+              max_ast_nodes * sizeof(thrive_ast) +
+              asm_size);
 
-    /* Generate AST */
-    QueryPerformanceCounter(&metrics[METRIC_AST].time_start);
-    thrive_ast_parse(tokens, tokens_size, ast, AST_CAPACITY, &ast_size);
-    QueryPerformanceCounter(&metrics[METRIC_AST].time_end);
+    arena = (thrive_allocator *)VirtualAlloc(0, total_size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
 
-    /* Generate Assembly */
-    QueryPerformanceCounter(&metrics[METRIC_ASM].time_start);
-    thrive_codegen(ast, ast_size, code_asm, CODE_CAPACITY, &code_asm_size);
-    QueryPerformanceCounter(&metrics[METRIC_ASM].time_end);
+    if (!arena)
+    {
+        return 0;
+    }
 
-    /* Optimize AST */
-    QueryPerformanceCounter(&metrics[METRIC_AST_OPTIMIZED].time_start);
-    thrive_ast_optimize(ast, &ast_size);
-    QueryPerformanceCounter(&metrics[METRIC_AST_OPTIMIZED].time_end);
+    /* Subdivide */
+    ptr = (u8 *)(arena + 1);
 
-    /* Generate Optimized Assembly */
-    QueryPerformanceCounter(&metrics[METRIC_ASM_OPTIMIZED].time_start);
-    thrive_codegen(ast, ast_size, code_asm, CODE_CAPACITY, &code_asm_size);
-    QueryPerformanceCounter(&metrics[METRIC_ASM_OPTIMIZED].time_end);
+    arena->base = (u8 *)arena;
+    arena->size = total_size;
 
-    /* Write assembly file */
-    QueryPerformanceCounter(&metrics[METRIC_IO_FILE_WRITE].time_start);
-    win32_io_file_write("thrive_optimized.asm", code_asm, code_asm_size);
-    QueryPerformanceCounter(&metrics[METRIC_IO_FILE_WRITE].time_end);
+    arena->tokens = (thrive_token *)ptr;
+    arena->tokens_capacity = max_tokens;
+    ptr += max_tokens * sizeof(thrive_token);
+
+    arena->ast = (thrive_ast *)ptr;
+    arena->ast_capacity = max_ast_nodes;
+    ptr += max_ast_nodes * sizeof(thrive_ast);
+
+    arena->asm_code = (u8 *)ptr;
+    arena->asm_code_capacity = asm_size;
+
+    return arena;
 }
 
 /* ############################################################################
@@ -551,7 +557,7 @@ THRIVE_API i32 start(i32 argc, u8 **argv)
     if (argc < 2)
     {
         WriteConsoleA(hConsole, "[thrive] usage: ", 16, &written, 0);
-        WriteConsoleA(hConsole, argv[0], (unsigned long)win32_strlen(argv[0]), &written, 0);
+        WriteConsoleA(hConsole, argv[0], (unsigned long)thrive_strlen(argv[0]), &written, 0);
         WriteConsoleA(hConsole, " code.thrive\n", 13, &written, 0);
         return 1;
     }
@@ -574,24 +580,56 @@ THRIVE_API i32 start(i32 argc, u8 **argv)
         return 1;
     }
 
-    /* Compile */
-    thrive_compile(metrics);
+    /* Compilation */
+    {
+        thrive_allocator *ta = thrive_allocator_create(file_size);
+
+        (void)*thrive_token_type_names;
+
+        if (!ta)
+        {
+            SetConsoleTextAttribute(hConsole, 12); /* red */
+            WriteConsoleA(hConsole, "[thrive] Cannot allocate memory for compiler!", 45, &written, 0);
+            SetConsoleTextAttribute(hConsole, 7);
+            return 1;
+        }
+
+        /* Generate Tokens */
+        QueryPerformanceCounter(&metrics[METRIC_TOKENIZATION].time_start);
+        thrive_tokenizer(file_memory, file_size, ta->tokens, ta->tokens_capacity, &ta->tokens_size);
+        QueryPerformanceCounter(&metrics[METRIC_TOKENIZATION].time_end);
+
+        /* Generate AST */
+        QueryPerformanceCounter(&metrics[METRIC_AST].time_start);
+        thrive_ast_parse(ta->tokens, ta->tokens_size, ta->ast, ta->ast_capacity, &ta->ast_size);
+        QueryPerformanceCounter(&metrics[METRIC_AST].time_end);
+
+        /* Generate Assembly */
+        QueryPerformanceCounter(&metrics[METRIC_ASM].time_start);
+        thrive_codegen(ta->ast, ta->ast_size, ta->asm_code, ta->asm_code_capacity, &ta->asm_code_size);
+        QueryPerformanceCounter(&metrics[METRIC_ASM].time_end);
+
+        /* Optimize AST */
+        QueryPerformanceCounter(&metrics[METRIC_AST_OPTIMIZED].time_start);
+        thrive_ast_optimize(ta->ast, &ta->ast_size);
+        QueryPerformanceCounter(&metrics[METRIC_AST_OPTIMIZED].time_end);
+
+        /* Generate Optimized Assembly */
+        QueryPerformanceCounter(&metrics[METRIC_ASM_OPTIMIZED].time_start);
+        thrive_codegen(ta->ast, ta->ast_size, ta->asm_code, ta->asm_code_capacity, &ta->asm_code_size);
+        QueryPerformanceCounter(&metrics[METRIC_ASM_OPTIMIZED].time_end);
+
+        /* Write assembly file */
+        QueryPerformanceCounter(&metrics[METRIC_IO_FILE_WRITE].time_start);
+        win32_io_file_write("thrive_optimized.asm", ta->asm_code, ta->asm_code_size);
+        QueryPerformanceCounter(&metrics[METRIC_IO_FILE_WRITE].time_end);
+    }
 
     /* Gather metrics */
     {
         u32 i;
         f64 metric_times[METRIC_COUNT];
         f64 metric_times_total = 0.0;
-
-        /* Has to match with enum structure */
-        u8 *win32_thrive_metric_names[] = {
-            (u8 *)"time_io_file_read ",
-            (u8 *)"time_tokenization ",
-            (u8 *)"time_ast          ",
-            (u8 *)"time_asm          ",
-            (u8 *)"time_ast_optimized",
-            (u8 *)"time_asm_optimized",
-            (u8 *)"time_io_file_write"};
 
         /* Compute total */
         for (i = 0; i < METRIC_COUNT; ++i)
@@ -605,7 +643,7 @@ THRIVE_API i32 start(i32 argc, u8 **argv)
         for (i = 0; i < METRIC_COUNT; ++i)
         {
             u8 *metric_name = win32_thrive_metric_names[i];
-            win32_io_print_ms(hConsole, metric_name, win32_strlen(metric_name), metric_times[i], metric_times_total);
+            win32_io_print_ms(hConsole, metric_name, thrive_strlen(metric_name), metric_times[i], metric_times_total);
         }
 
         /* Total time */
