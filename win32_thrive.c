@@ -94,8 +94,33 @@ WIN32_API(char *)
 GetCommandLineA(void);
 
 /* File IO */
+typedef struct FILETIME
+{
+    unsigned long dwLowDateTime;
+    unsigned long dwHighDateTime;
+
+} FILETIME;
+
+typedef struct FILE_ATTRIBUTE_DATA
+{
+    unsigned long dwFileAttributes;
+    FILETIME ftCreationTime;
+    FILETIME ftLastAccessTime;
+    FILETIME ftLastWriteTime;
+    unsigned long nFileSizeHigh;
+    unsigned long nFileSizeLow;
+} FILE_ATTRIBUTE_DATA;
+
+typedef enum GET_FILEEX_INFO_LEVELS
+{
+    GetFileExInfoStandard,
+    GetFileExMaxInfoLevel
+} GET_FILEEX_INFO_LEVELS;
+
 WIN32_API(int)
 CloseHandle(void *hObject);
+WIN32_API(int)
+GetFileAttributesExA(char *lpFileName, GET_FILEEX_INFO_LEVELS fInfoLevelId, void *lpFileInformation);
 WIN32_API(void *)
 CreateFileA(char *lpFileName, unsigned long dwDesiredAccess, unsigned long dwShareMode, void *, unsigned long dwCreationDisposition, unsigned long dwFlagsAndAttributes, void *hTemplateFile);
 WIN32_API(unsigned long)
@@ -158,6 +183,13 @@ THRIVE_API f64 win32_elapsed_ms(
 }
 
 #define FILE_MMAP_THRESHOLD (1024 * 1024) /* 1 MB */
+
+THRIVE_API THRIVE_INLINE FILETIME win32_io_file_mod_time(char *file)
+{
+    static FILETIME empty = {0, 0};
+    FILE_ATTRIBUTE_DATA fad;
+    return GetFileAttributesExA(file, GetFileExInfoStandard, &fad) ? fad.ftLastWriteTime : empty;
+}
 
 THRIVE_API u8 *win32_io_file_read(
     char *filename,
