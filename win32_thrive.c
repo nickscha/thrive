@@ -66,9 +66,12 @@ void *memcpy(void *dest, void *src, unsigned int count)
 /* File IO */
 #define INVALID_HANDLE ((void *)-1)
 #define GENERIC_READ (0x80000000L)
+#define GENERIC_WRITE (0x40000000L)
+#define CREATE_ALWAYS 2
 #define FILE_SHARE_READ 0x00000001
 #define OPEN_EXISTING 3
 #define FILE_ATTRIBUTE_NORMAL 0x00000080
+#define FILE_ATTRIBUTE_TEMPORARY 0x00000100
 #define FILE_FLAG_SEQUENTIAL_SCAN 0x08000000
 #define INVALID_FILE_SIZE ((unsigned long)0xFFFFFFFF)
 
@@ -95,10 +98,12 @@ WIN32_API(int)
 CloseHandle(void *hObject);
 WIN32_API(void *)
 CreateFileA(char *lpFileName, unsigned long dwDesiredAccess, unsigned long dwShareMode, void *, unsigned long dwCreationDisposition, unsigned long dwFlagsAndAttributes, void *hTemplateFile);
-WIN32_API(int)
-ReadFile(void *hFile, void *lpBuffer, unsigned long nNumberOfBytesToRead, unsigned long *lpNumberOfBytesRead, void *lpOverlapped);
 WIN32_API(unsigned long)
 GetFileSize(void *hFile, unsigned long *lpFileSizeHigh);
+WIN32_API(int)
+ReadFile(void *hFile, void *lpBuffer, unsigned long nNumberOfBytesToRead, unsigned long *lpNumberOfBytesRead, void *lpOverlapped);
+WIN32_API(int)
+WriteFile(void *hFile, void *lpBuffer, unsigned long nNumberOfBytesToWrite, unsigned long *lpNumberOfBytesWritten, void *lpOverlapped);
 
 /* File Memory Mapping */
 WIN32_API(void *)
@@ -229,6 +234,38 @@ THRIVE_API u8 *win32_io_file_read(
     *file_size_out = fileSize;
     CloseHandle(hFile);
     return buffer;
+}
+
+THRIVE_API u8 win32_io_file_write(
+    char *filename,
+    u8 *buffer,
+    u32 buffer_size)
+{
+    void *hFile;
+    unsigned long bytes_written;
+
+    hFile = CreateFileA(
+        filename,
+        GENERIC_WRITE,
+        FILE_SHARE_READ,
+        0,
+        CREATE_ALWAYS,
+        FILE_ATTRIBUTE_TEMPORARY | FILE_FLAG_SEQUENTIAL_SCAN,
+        0);
+
+    if (hFile == INVALID_HANDLE)
+        return 0;
+
+    if (!WriteFile(hFile, buffer, buffer_size, &bytes_written, 0) ||
+        bytes_written != buffer_size)
+    {
+        CloseHandle(hFile);
+        return 0;
+    }
+
+    CloseHandle(hFile);
+
+    return 1;
 }
 
 THRIVE_API void win32_io_print_ms(void *hConsole, u8 *name, u32 name_length, f64 ms, f64 ms_total)
@@ -390,6 +427,7 @@ typedef enum win32_thrive_metrics
     METRIC_ASM,
     METRIC_AST_OPTIMIZED,
     METRIC_ASM_OPTIMIZED,
+    METRIC_IO_FILE_WRITE,
     METRIC_COUNT
 
 } win32_thrive_metrics;
@@ -450,6 +488,11 @@ THRIVE_API void thrive_compile(win32_thrive_metric *metrics)
     QueryPerformanceCounter(&metrics[METRIC_ASM_OPTIMIZED].time_start);
     thrive_codegen(ast, ast_size, code_asm, CODE_CAPACITY, &code_asm_size);
     QueryPerformanceCounter(&metrics[METRIC_ASM_OPTIMIZED].time_end);
+
+    /* Write assembly file */
+    QueryPerformanceCounter(&metrics[METRIC_IO_FILE_WRITE].time_start);
+    win32_io_file_write("thrive_optimized.asm", code_asm, code_asm_size);
+    QueryPerformanceCounter(&metrics[METRIC_IO_FILE_WRITE].time_end);
 }
 
 /* ############################################################################
@@ -515,7 +558,8 @@ THRIVE_API i32 start(i32 argc, u8 **argv)
             (u8 *)"time_ast          ",
             (u8 *)"time_asm          ",
             (u8 *)"time_ast_optimized",
-            (u8 *)"time_asm_optimized"};
+            (u8 *)"time_asm_optimized",
+            (u8 *)"time_io_file_write"};
 
         /* Compute total */
         for (i = 0; i < METRIC_COUNT; ++i)
