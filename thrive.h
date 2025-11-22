@@ -750,26 +750,26 @@ typedef struct thrive_parser
 
 } thrive_parser;
 
-THRIVE_API THRIVE_INLINE thrive_token *thrive_ast_peek(thrive_parser *p)
+THRIVE_API THRIVE_INLINE thrive_token *thrive_ast_token_peek(thrive_parser *p)
 {
     return (p->pos < p->count) ? &p->toks[p->pos] : &p->toks[p->count - 1];
 }
 
-THRIVE_API THRIVE_INLINE thrive_token *thrive_ast_next(thrive_parser *p)
+THRIVE_API THRIVE_INLINE thrive_token *thrive_ast_token_next(thrive_parser *p)
 {
     if (p->pos < p->count)
     {
         p->pos++;
     }
 
-    return thrive_ast_peek(p);
+    return thrive_ast_token_peek(p);
 }
 
-THRIVE_API THRIVE_INLINE i32 thrive_ast_accept(thrive_parser *p, thrive_token_type t)
+THRIVE_API THRIVE_INLINE i32 thrive_ast_token_accept(thrive_parser *p, thrive_token_type t)
 {
-    if (thrive_ast_peek(p)->type == t)
+    if (thrive_ast_token_peek(p)->type == t)
     {
-        thrive_ast_next(p);
+        thrive_ast_token_next(p);
         return 1;
     }
 
@@ -783,7 +783,7 @@ THRIVE_API THRIVE_INLINE u16 thrive_ast_create(thrive_parser *p)
     return id;
 }
 
-THRIVE_API i32 thrive_ast_precedence(thrive_token_type t)
+THRIVE_API i32 thrive_ast_token_precedence(thrive_token_type t)
 {
     switch (t)
     {
@@ -807,7 +807,7 @@ THRIVE_API u16 thrive_ast_parse_expr_bp(thrive_parser *p, i32 min_bp);
 
 THRIVE_API u16 thrive_ast_parse_primary(thrive_parser *p)
 {
-    thrive_token *t = thrive_ast_peek(p);
+    thrive_token *t = thrive_ast_token_peek(p);
 
     /* integer literal */
     if (t->type == THRIVE_TOKEN_INTEGER)
@@ -815,7 +815,7 @@ THRIVE_API u16 thrive_ast_parse_primary(thrive_parser *p)
         u16 id = thrive_ast_create(p);
         p->ast[id].type = AST_INT;
         p->ast[id].v.int_val = t->value.integer;
-        thrive_ast_next(p);
+        thrive_ast_token_next(p);
         return id;
     }
 
@@ -825,7 +825,7 @@ THRIVE_API u16 thrive_ast_parse_primary(thrive_parser *p)
         u16 id = thrive_ast_create(p);
         p->ast[id].type = AST_FLOAT;
         p->ast[id].v.float_val = t->value.floating;
-        thrive_ast_next(p);
+        thrive_ast_token_next(p);
         return id;
     }
 
@@ -849,20 +849,20 @@ THRIVE_API u16 thrive_ast_parse_primary(thrive_parser *p)
             p->ast[id].v.name[i] = 0;
         }
 
-        thrive_ast_next(p);
+        thrive_ast_token_next(p);
         return id;
     }
 
     /* parenthesized expression */
-    if (thrive_ast_accept(p, THRIVE_TOKEN_LPAREN))
+    if (thrive_ast_token_accept(p, THRIVE_TOKEN_LPAREN))
     {
         u16 inner = thrive_ast_parse_expr_bp(p, 0);
 
         /* Check for closing parenthesis */
-        if (!thrive_ast_accept(p, THRIVE_TOKEN_RPAREN))
+        if (!thrive_ast_token_accept(p, THRIVE_TOKEN_RPAREN))
         {
             /* TODO: Error handling */
-            thrive_token *token = thrive_ast_peek(p);
+            thrive_token *token = thrive_ast_token_peek(p);
             u8 *message = (u8 *)"Expected ')'";
 
             (void)token;
@@ -883,9 +883,9 @@ THRIVE_API u16 thrive_ast_parse_expr_bp(thrive_parser *p, i32 min_bp)
 
     for (;;)
     {
-        thrive_token_type op = thrive_ast_peek(p)->type;
-        i32 bp = thrive_ast_precedence(op);
-        i32 thrive_ast_next_min_bp;
+        thrive_token_type op = thrive_ast_token_peek(p)->type;
+        i32 bp = thrive_ast_token_precedence(op);
+        i32 thrive_ast_token_next_min_bp;
         u16 right;
         u16 id;
 
@@ -895,11 +895,11 @@ THRIVE_API u16 thrive_ast_parse_expr_bp(thrive_parser *p, i32 min_bp)
         }
 
         /* determine left & right associativity */
-        thrive_ast_next_min_bp = bp + (op == THRIVE_TOKEN_ASSIGN ? 0 : 1);
+        thrive_ast_token_next_min_bp = bp + (op == THRIVE_TOKEN_ASSIGN ? 0 : 1);
 
-        thrive_ast_next(p); /* consume operator */
+        thrive_ast_token_next(p); /* consume operator */
 
-        right = thrive_ast_parse_expr_bp(p, thrive_ast_next_min_bp);
+        right = thrive_ast_parse_expr_bp(p, thrive_ast_token_next_min_bp);
 
         /* build AST node */
         id = thrive_ast_create(p);
@@ -936,12 +936,12 @@ THRIVE_API u16 thrive_ast_parse_expr_bp(thrive_parser *p, i32 min_bp)
 
 THRIVE_API u16 thrive_ast_parse_statement(thrive_parser *p)
 {
-    thrive_ast_peek(p);
+    thrive_ast_token_peek(p);
 
     /* u32 var = expr */
-    if (thrive_ast_accept(p, THRIVE_TOKEN_KEYWORD_U32))
+    if (thrive_ast_token_accept(p, THRIVE_TOKEN_KEYWORD_U32))
     {
-        thrive_token *v = thrive_ast_peek(p);
+        thrive_token *v = thrive_ast_token_peek(p);
 
         /* allocate node */
         u16 id = thrive_ast_create(p);
@@ -962,9 +962,9 @@ THRIVE_API u16 thrive_ast_parse_statement(thrive_parser *p)
             p->ast[id].v.decl.name[i] = 0;
         }
 
-        thrive_ast_next(p); /* consume var */
+        thrive_ast_token_next(p); /* consume var */
 
-        thrive_ast_accept(p, THRIVE_TOKEN_ASSIGN);
+        thrive_ast_token_accept(p, THRIVE_TOKEN_ASSIGN);
 
         p->ast[id].v.decl.expr = thrive_ast_parse_expr_bp(p, 0);
 
@@ -972,7 +972,7 @@ THRIVE_API u16 thrive_ast_parse_statement(thrive_parser *p)
     }
 
     /* ret expr */
-    if (thrive_ast_accept(p, THRIVE_TOKEN_KEYWORD_RET))
+    if (thrive_ast_token_accept(p, THRIVE_TOKEN_KEYWORD_RET))
     {
         u16 id = thrive_ast_create(p);
         p->ast[id].type = AST_RETURN;
@@ -999,7 +999,7 @@ THRIVE_API void thrive_ast_parse(
     P.ast_cap = ast_cap;
     P.ast_size = 0;
 
-    while (thrive_ast_peek(&P)->type != THRIVE_TOKEN_EOF &&
+    while (thrive_ast_token_peek(&P)->type != THRIVE_TOKEN_EOF &&
            P.ast_size < P.ast_cap)
     {
         thrive_ast_parse_statement(&P);
@@ -1026,33 +1026,35 @@ THRIVE_API u32 thrive_hash_name(u8 *name)
     return hash % MAX_CONSTANTS;
 }
 
-typedef struct thrive_const_sym
+typedef struct thrive_const_symbol
 {
     u8 name[32];
     u8 is_float;
+
     union
     {
         i32 i_val;
         f64 f_val;
     } val;
-} thrive_const_sym;
+
+} thrive_const_symbol;
 
 typedef struct thrive_optimizer_ctx
 {
     thrive_ast *ast;
     u32 ast_size;
-    thrive_const_sym constants[MAX_CONSTANTS];
+    thrive_const_symbol constants[MAX_CONSTANTS];
     u32 count;
 } thrive_optimizer_ctx;
 
-THRIVE_API thrive_const_sym *thrive_ast_find_const(thrive_optimizer_ctx *ctx, u8 *name)
+THRIVE_API thrive_const_symbol *thrive_ast_find_const(thrive_optimizer_ctx *ctx, u8 *name)
 {
     u32 initial_idx = thrive_hash_name(name);
     u32 idx = initial_idx;
 
     if (name[0] == 0)
     {
-        return (thrive_const_sym *)((void *)0);
+        return (thrive_const_symbol *)((void *)0);
     }
 
     do
@@ -1063,14 +1065,14 @@ THRIVE_API thrive_const_sym *thrive_ast_find_const(thrive_optimizer_ctx *ctx, u8
         }
         if (ctx->constants[idx].name[0] == 0)
         {
-            return (thrive_const_sym *)((void *)0);
+            return (thrive_const_symbol *)((void *)0);
         }
 
         idx = (idx + 1) % MAX_CONSTANTS;
 
     } while (idx != initial_idx);
 
-    return (thrive_const_sym *)((void *)0);
+    return (thrive_const_symbol *)((void *)0);
 }
 
 THRIVE_API void thrive_ast_register_const(thrive_optimizer_ctx *ctx, u8 *name, u8 is_float, i32 i_val, f64 f_val)
@@ -1123,7 +1125,7 @@ THRIVE_API void thrive_ast_register_const(thrive_optimizer_ctx *ctx, u8 *name, u
 THRIVE_API u8 thrive_ast_try_propagate_var(thrive_optimizer_ctx *ctx, u16 node_id)
 {
     thrive_ast *node = &ctx->ast[node_id];
-    thrive_const_sym *sym;
+    thrive_const_symbol *sym;
 
     if (node->type != AST_VAR)
     {
