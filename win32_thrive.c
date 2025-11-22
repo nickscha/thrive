@@ -571,7 +571,7 @@ THRIVE_API i32 compile(char *file_name, LARGE_INTEGER *freq)
     if (!file_memory)
     {
         SetConsoleTextAttribute(hConsole, 12); /* red */
-        WriteConsoleA(hConsole, "[thrive] Cannot read file!", 26, &written, 0);
+        WriteConsoleA(hConsole, "[thrive] Cannot read file!\n", 27, &written, 0);
         SetConsoleTextAttribute(hConsole, 7);
         return 1;
     }
@@ -585,7 +585,7 @@ THRIVE_API i32 compile(char *file_name, LARGE_INTEGER *freq)
         if (!ta)
         {
             SetConsoleTextAttribute(hConsole, 12); /* red */
-            WriteConsoleA(hConsole, "[thrive] Cannot allocate memory for compiler!", 45, &written, 0);
+            WriteConsoleA(hConsole, "[thrive] Cannot allocate memory for compiler!\n", 46, &written, 0);
             SetConsoleTextAttribute(hConsole, 7);
             VirtualFree(file_memory, 0, MEM_RELEASE);
 
