@@ -447,7 +447,7 @@ THRIVE_API void win32_io_print_ms(void *hConsole, u8 *name, u32 name_length, f64
 
     {
         f64 percent = (ms_total > 0.0) ? (ms / ms_total * 100.0) : 0.0;
-        i32 len = thrive_f64_to_string(num, percent, 1, 5, ' ');
+        i32 len = thrive_f64_to_string(num, percent, 2, 6, ' ');
 
         *p++ = ' ';
 
@@ -703,16 +703,38 @@ THRIVE_API i32 start(i32 argc, u8 **argv)
 
     LARGE_INTEGER freq;
 
-    u8 conf_enable_hot_reload = argc == 3;
+    u8 conf_enable_hot_reload = 0;
+    u8 conf_enable_optimized = 0;
 
     /* Print usage */
     if (argc < 2)
     {
-        WriteConsoleA(hConsole, "[thrive] usage: ", 16, &written, 0);
+        WriteConsoleA(hConsole, "[thrive] usage  : ", 18, &written, 0);
         WriteConsoleA(hConsole, argv[0], (unsigned long)thrive_string_length(argv[0]), &written, 0);
-        WriteConsoleA(hConsole, " code.thrive\n", 13, &written, 0);
+        WriteConsoleA(hConsole, " code.thrive <options>\n", 23, &written, 0);
+        WriteConsoleA(hConsole, "[thrive] options:\n", 18, &written, 0);
+        WriteConsoleA(hConsole, "[thrive]   --hot-reload  ; Enable hot reloading of source file\n", 63, &written, 0);
+        WriteConsoleA(hConsole, "[thrive]   --optimized   ; Enable optimizations\n", 48, &written, 0);
         return 1;
     }
+
+    /* Fetch CLI Args */
+    {
+        i32 i;
+        for (i = 1; i < argc; ++i)
+        {
+            if (thrive_string_equals(argv[i], (u8 *)"--hot-reload"))
+            {
+                conf_enable_hot_reload = 1;
+            }
+            else if (thrive_string_equals(argv[i], (u8 *)"--optimized"))
+            {
+                conf_enable_optimized = 1;
+            }
+        }
+    }
+
+    (void) conf_enable_optimized;
 
     /* Query the CPU Frequency once */
     QueryPerformanceFrequency(&freq);
