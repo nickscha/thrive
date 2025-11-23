@@ -48,7 +48,7 @@ void *memcpy(void *dest, void *src, unsigned int count)
  * compared to MSVC, do not precompile the windows header.
  *
  * Since most programs only use a small amount of win32 functions we can just
- * manually define them. This also lets us replace the DWORD, PTR, ... types
+ * manually define them. This also lets us replace the ancient DWORD, PTR, ... types
  * with standard C types.
  */
 #ifndef _WINDOWS_

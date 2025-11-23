@@ -2,6 +2,31 @@
 
 A C89 standard compliant, nostdlib (no C Standard Library) Low Level Programming Language inbetween Assembly and C (THRIVE).
 
+LANGUAGE SPECIFICATON (WIP)
+
+  General Design (less than C89):
+    - procedural
+    - no mixed declaration
+    - fixed sized types  ; on all platforms
+    - no header files    ; just thrive source files
+    - no marcos/typedefs
+    - no standard library
+    - no recursive functions
+    - all loop conditions must have a max bound
+    
+  Types:
+    - s8, s16, s32      ; String type
+    - b8, b16, b32, b64 ; Boolean type
+    - u8, u16, u32, u64 ; Unsigned Integer type
+    - i8, i16, i32, i64 ; Signed Integer type
+    - f8, f16, f32, f64 ; Floating type
+
+  Keywords:
+    - ret ; Return
+    - ext ; External Function
+    - lds ; Load source
+    - ldb ; Load binary
+
 LICENSE
 
   Placed in the public domain and also MIT licensed.
