@@ -609,19 +609,19 @@ THRIVE_API thrive_allocator *thrive_allocator_create(u32 source_size)
 THRIVE_API i32 thrive_compile(u8 enable_optimized, char *file_name, void *hConsole, LARGE_INTEGER *freq)
 {
     unsigned long written = 0;
-    win32_thrive_metric metrics[METRIC_COUNT];
+    win32_thrive_metric metrics[METRIC_COUNT] = {0};
 
-    u32 file_size = 0;
-    u8 *file_memory;
+    u32 source_code_size = 0;
+    u8 *source_code;
 
     (void)*thrive_token_type_names;
 
     /* Read entire file */
     QueryPerformanceCounter(&metrics[METRIC_IO_FILE_READ].time_start);
-    file_memory = win32_io_file_read(file_name, &file_size);
+    source_code = win32_io_file_read(file_name, &source_code_size);
     QueryPerformanceCounter(&metrics[METRIC_IO_FILE_READ].time_end);
 
-    if (!file_memory)
+    if (!source_code)
     {
         SetConsoleTextAttribute(hConsole, 12); /* red */
         WriteConsoleA(hConsole, "[thrive] Cannot read file!\n", 27, &written, 0);
@@ -631,21 +631,21 @@ THRIVE_API i32 thrive_compile(u8 enable_optimized, char *file_name, void *hConso
 
     /* Compilation */
     {
-        thrive_allocator *ta = thrive_allocator_create(file_size);
+        thrive_allocator *ta = thrive_allocator_create(source_code_size);
 
         if (!ta)
         {
             SetConsoleTextAttribute(hConsole, 12); /* red */
-            WriteConsoleA(hConsole, "[thrive] Cannot allocate memory for thrive_compiler!\n", 46, &written, 0);
+            WriteConsoleA(hConsole, "[thrive] Cannot allocate memory for thrive_compiler!\n", 53, &written, 0);
             SetConsoleTextAttribute(hConsole, 7);
-            VirtualFree(file_memory, 0, MEM_RELEASE);
+            VirtualFree(source_code, 0, MEM_RELEASE);
 
             return 1;
         }
 
         /* Generate Tokens */
         QueryPerformanceCounter(&metrics[METRIC_TOKENIZATION].time_start);
-        thrive_tokenizer(file_memory, file_size, ta->tokens, ta->tokens_capacity, &ta->tokens_size);
+        thrive_tokenizer(source_code, source_code_size, ta->tokens, ta->tokens_capacity, &ta->tokens_size);
         QueryPerformanceCounter(&metrics[METRIC_TOKENIZATION].time_end);
 
         /* Generate AST */
@@ -676,7 +676,7 @@ THRIVE_API i32 thrive_compile(u8 enable_optimized, char *file_name, void *hConso
         win32_io_file_write("thrive.asm", ta->asm_code, ta->asm_code_size);
         QueryPerformanceCounter(&metrics[METRIC_IO_FILE_WRITE].time_end);
 
-        VirtualFree(file_memory, 0, MEM_RELEASE);
+        VirtualFree(source_code, 0, MEM_RELEASE);
         VirtualFree(ta, 0, MEM_RELEASE);
     }
 
@@ -783,11 +783,11 @@ THRIVE_API i32 start(i32 argc, u8 **argv)
 
             if (CompareFileTime(&file_time_current, &file_time_previous) != 0)
             {
-                WriteConsoleA(hConsole, "[thrive] rethrive_compile\n", 19, &written, 0);
+                WriteConsoleA(hConsole, "[thrive] recompile\n", 19, &written, 0);
                 thrive_compile(conf_enable_optimized, file_name, hConsole, &freq);
             }
 
-            Sleep(8);
+            Sleep(16);
 
             file_time_previous = file_time_current;
         }
