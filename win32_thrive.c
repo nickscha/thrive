@@ -164,21 +164,6 @@ ExitProcess(unsigned int uExitCode);
 
 #include "thrive.h"
 
-THRIVE_API THRIVE_INLINE void thrive_error(thrive_token *token, u8 *message, u32 message_length)
-{
-    unsigned long written = 0;
-    void *hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
-
-    (void)token;
-
-    SetConsoleTextAttribute(hConsole, 12); /* red */
-    WriteConsoleA(hConsole, "[thrive] error: ", 16, &written, 0);
-    WriteConsoleA(hConsole, message, message_length, &written, 0);
-    SetConsoleTextAttribute(hConsole, 7); /* default */
-
-    ExitProcess(1);
-}
-
 THRIVE_API f64 win32_elapsed_ms(
     LARGE_INTEGER *start,
     LARGE_INTEGER *end,
@@ -245,6 +230,7 @@ u8 *win32_io_file_read(char *filename, u32 *file_size_out)
     {
         /* Small file: read normally */
         buffer = (u8 *)VirtualAlloc((void *)0, fileSize + 1, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+
         if (!buffer)
         {
             CloseHandle(hFile);
@@ -420,6 +406,22 @@ THRIVE_API i32 thrive_f64_to_string(
 
     return p;
 }
+
+THRIVE_API THRIVE_INLINE void thrive_error(thrive_token *token, u8 *message, u32 message_length)
+{
+    unsigned long written = 0;
+    void *hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+
+    (void)token;
+
+    SetConsoleTextAttribute(hConsole, 12); /* red */
+    WriteConsoleA(hConsole, "[thrive] error: ", 16, &written, 0);
+    WriteConsoleA(hConsole, message, message_length, &written, 0);
+    SetConsoleTextAttribute(hConsole, 7); /* default */
+
+    ExitProcess(1);
+}
+
 THRIVE_API void win32_io_print_ms(void *hConsole, u8 *name, u32 name_length, f64 ms, f64 ms_total)
 {
     unsigned long written;
@@ -742,6 +744,7 @@ THRIVE_API i32 start(i32 argc, u8 **argv)
     if (argc >= 2)
     {
         i32 i;
+        
         for (i = 2; i < argc; ++i)
         {
             if (thrive_string_equals(argv[i], (u8 *)"--hot-reload"))

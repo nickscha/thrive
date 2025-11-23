@@ -881,6 +881,7 @@ THRIVE_API u16 thrive_ast_parse_primary(thrive_parser *p)
         }
 
         thrive_ast_token_next(p);
+
         return id;
     }
 
@@ -1006,6 +1007,7 @@ THRIVE_API u16 thrive_ast_parse_statement(thrive_parser *p)
         u16 id = thrive_ast_create(p);
         p->ast[id].type = AST_RETURN;
         p->ast[id].v.expr = thrive_ast_parse_expr_bp(p, 0);
+
         return id;
     }
 
@@ -1020,21 +1022,20 @@ THRIVE_API void thrive_ast_parse(
     u32 ast_cap,
     u32 *ast_out)
 {
-    thrive_parser P;
-    P.toks = tokens;
-    P.count = token_count;
-    P.pos = 0;
-    P.ast = ast_buf;
-    P.ast_cap = ast_cap;
-    P.ast_size = 0;
+    thrive_parser parser = {0};
+    parser.toks = tokens;
+    parser.count = token_count;
+    parser.pos = 0;
+    parser.ast = ast_buf;
+    parser.ast_cap = ast_cap;
+    parser.ast_size = 0;
 
-    while (thrive_ast_token_peek(&P)->type != THRIVE_TOKEN_EOF &&
-           P.ast_size < P.ast_cap)
+    while (thrive_ast_token_peek(&parser)->type != THRIVE_TOKEN_EOF && parser.ast_size < parser.ast_cap)
     {
-        thrive_ast_parse_statement(&P);
+        thrive_ast_parse_statement(&parser);
     }
 
-    *ast_out = P.ast_size;
+    *ast_out = parser.ast_size;
 }
 
 /* #############################################################################
@@ -1063,12 +1064,14 @@ typedef struct thrive_optimize_context
     u32 ast_size;
     thrive_const_symbol constants[THRIVE_MAX_CONSTANTS];
     u32 count;
+
 } thrive_optimize_context;
 
 THRIVE_API u32 thrive_ast_optimize_hash_name(u8 *name)
 {
     u32 hash = 5381;
     u8 c;
+
     while ((c = *name++))
     {
         hash = ((hash << 5) + hash) + c;
@@ -1439,8 +1442,9 @@ THRIVE_API void thrive_ast_optimize_compact(thrive_ast *ast, u32 *ast_size)
 
 THRIVE_API void thrive_ast_optimize(thrive_ast *ast, u32 *ast_size_ptr)
 {
-    thrive_optimize_context ctx;
     u32 i;
+
+    thrive_optimize_context ctx = {0};
 
     ctx.ast = ast;
     ctx.ast_size = *ast_size_ptr;
@@ -1753,10 +1757,14 @@ THRIVE_API void thrive_codegen(
     u32 code_capacity,
     u32 *code_size)
 {
-    thrive_codegen_ctx ctx;
+
+    thrive_codegen_ctx ctx = {0};
+
     u32 i;
+
     u8 has_section_data = 0;
     u8 has_section_bss = 0;
+
     thrive_ast_type last_type = (thrive_ast_type)-1;
 
     ctx.buf = code;
