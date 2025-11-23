@@ -718,6 +718,12 @@ THRIVE_API THRIVE_INLINE u8 thrive_tokenizer(
 }
 
 /* #############################################################################
+ * # [SECTION] Functions that needs to be implemented by platform layer
+ * #############################################################################
+ */
+THRIVE_API THRIVE_INLINE void thrive_error(thrive_token *token, u8 *message, u32 message_length);
+
+/* #############################################################################
  * # [SECTION] AST (Pratt Parsing)
  * #############################################################################
  */
@@ -886,12 +892,10 @@ THRIVE_API u16 thrive_ast_parse_primary(thrive_parser *p)
         /* Check for closing parenthesis */
         if (!thrive_ast_token_accept(p, THRIVE_TOKEN_RPAREN))
         {
-            /* TODO: Error handling */
             thrive_token *token = thrive_ast_token_peek(p);
             u8 *message = (u8 *)"Expected ')'";
 
-            (void)token;
-            (void)message;
+            thrive_error(token, message, thrive_string_length(message));
         }
 
         return inner;
@@ -1742,8 +1746,6 @@ THRIVE_API void thrive_emit_node(thrive_codegen_ctx *ctx, u16 node_idx)
     }
 }
 
-/* ---- Main Entry Point ---- */
-
 THRIVE_API void thrive_codegen(
     thrive_ast *ast,
     u32 ast_size,
@@ -1861,6 +1863,11 @@ THRIVE_API void thrive_codegen(
 
     *code_size = ctx.size;
 }
+
+/* #############################################################################
+ * # [SECTION] Entry Point - Full compilation
+ * #############################################################################
+ */
 
 #endif /* THRIVE_H */
 

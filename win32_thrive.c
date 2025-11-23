@@ -45,7 +45,7 @@ void *memcpy(void *dest, void *src, unsigned int count)
  *
  * "windows.h" is huge (even with #NO_XXX #LEAN_.. defines).
  * This reduces compilation speed (especially with GCC/Clang) a lot since they,
- * compared to MSVC, do not precompile the windows header.
+ * compared to MSVC, do not prethrive_compile the windows header.
  *
  * Since most programs only use a small amount of win32 functions we can just
  * manually define them. This also lets us replace the ancient DWORD, PTR, ... types
@@ -157,10 +157,27 @@ SetConsoleTextAttribute(void *hConsoleOutput, unsigned short wAttributes);
 
 WIN32_API(void)
 Sleep(unsigned long dwMilliseconds);
+WIN32_API(void)
+ExitProcess(unsigned int uExitCode);
 
 #endif /* _WINDOWS_ */
 
 #include "thrive.h"
+
+THRIVE_API THRIVE_INLINE void thrive_error(thrive_token *token, u8 *message, u32 message_length)
+{
+    unsigned long written = 0;
+    void *hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+
+    (void)token;
+
+    SetConsoleTextAttribute(hConsole, 12); /* red */
+    WriteConsoleA(hConsole, "[thrive] error: ", 16, &written, 0);
+    WriteConsoleA(hConsole, message, message_length, &written, 0);
+    SetConsoleTextAttribute(hConsole, 7); /* default */
+
+    ExitProcess(1);
+}
 
 THRIVE_API f64 win32_elapsed_ms(
     LARGE_INTEGER *start,
@@ -589,7 +606,7 @@ THRIVE_API thrive_allocator *thrive_allocator_create(u32 source_size)
     return arena;
 }
 
-THRIVE_API i32 compile(u8 enable_optimized, char *file_name, void *hConsole, LARGE_INTEGER *freq)
+THRIVE_API i32 thrive_compile(u8 enable_optimized, char *file_name, void *hConsole, LARGE_INTEGER *freq)
 {
     unsigned long written = 0;
     win32_thrive_metric metrics[METRIC_COUNT];
@@ -598,7 +615,6 @@ THRIVE_API i32 compile(u8 enable_optimized, char *file_name, void *hConsole, LAR
     u8 *file_memory;
 
     (void)*thrive_token_type_names;
-    (void)thrive_ast_optimize;
 
     /* Read entire file */
     QueryPerformanceCounter(&metrics[METRIC_IO_FILE_READ].time_start);
@@ -620,7 +636,7 @@ THRIVE_API i32 compile(u8 enable_optimized, char *file_name, void *hConsole, LAR
         if (!ta)
         {
             SetConsoleTextAttribute(hConsole, 12); /* red */
-            WriteConsoleA(hConsole, "[thrive] Cannot allocate memory for compiler!\n", 46, &written, 0);
+            WriteConsoleA(hConsole, "[thrive] Cannot allocate memory for thrive_compiler!\n", 46, &written, 0);
             SetConsoleTextAttribute(hConsole, 7);
             VirtualFree(file_memory, 0, MEM_RELEASE);
 
@@ -767,8 +783,8 @@ THRIVE_API i32 start(i32 argc, u8 **argv)
 
             if (CompareFileTime(&file_time_current, &file_time_previous) != 0)
             {
-                WriteConsoleA(hConsole, "[thrive] recompile\n", 19, &written, 0);
-                compile(conf_enable_optimized, file_name, hConsole, &freq);
+                WriteConsoleA(hConsole, "[thrive] rethrive_compile\n", 19, &written, 0);
+                thrive_compile(conf_enable_optimized, file_name, hConsole, &freq);
             }
 
             Sleep(8);
@@ -777,7 +793,7 @@ THRIVE_API i32 start(i32 argc, u8 **argv)
         }
     }
 
-    return compile(conf_enable_optimized, file_name, hConsole, &freq);
+    return thrive_compile(conf_enable_optimized, file_name, hConsole, &freq);
 }
 
 /* ############################################################################
@@ -873,8 +889,8 @@ i32 nostdlib_main(void)
    ------------------------------------------------------------------------------
    ALTERNATIVE B - Public Domain (www.unlicense.org)
    This is free and unencumbered software released into the public domain.
-   Anyone is free to copy, modify, publish, use, compile, sell, or distribute this
-   software, either in source code form or as a compiled binary, for any purpose,
+   Anyone is free to copy, modify, publish, use, thrive_compile, sell, or distribute this
+   software, either in source code form or as a thrive_compiled binary, for any purpose,
    commercial or non-commercial, and by any means.
    In jurisdictions that recognize copyright laws, the author or authors of this
    software dedicate any and all copyright interest in the software to the public
