@@ -723,9 +723,10 @@ THRIVE_API i32 start(i32 argc, u8 **argv)
     }
 
     /* Fetch CLI Args */
+    if (argc >= 2)
     {
         i32 i;
-        for (i = 1; i < argc; ++i)
+        for (i = 2; i < argc; ++i)
         {
             if (thrive_string_equals(argv[i], (u8 *)"--hot-reload"))
             {
@@ -734,6 +735,15 @@ THRIVE_API i32 start(i32 argc, u8 **argv)
             else if (thrive_string_equals(argv[i], (u8 *)"--optimized"))
             {
                 conf_enable_optimized = 1;
+            }
+            else
+            {
+                SetConsoleTextAttribute(hConsole, 12); /* red */
+                WriteConsoleA(hConsole, "[thrive] Unrecognized option: ", 30, &written, 0);
+                WriteConsoleA(hConsole, argv[i], thrive_string_length(argv[i]), &written, 0);
+                WriteConsoleA(hConsole, "\n", 1, &written, 0);
+                SetConsoleTextAttribute(hConsole, 7);
+                return 1;
             }
         }
     }
@@ -761,7 +771,7 @@ THRIVE_API i32 start(i32 argc, u8 **argv)
                 compile(conf_enable_optimized, file_name, hConsole, &freq);
             }
 
-            Sleep(5);
+            Sleep(8);
 
             file_time_previous = file_time_current;
         }

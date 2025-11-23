@@ -33,4 +33,4 @@ nasm -f win64 thrive.asm
 REM ---------------------------------------------------------------------------
 REM Link
 REM ---------------------------------------------------------------------------
-gcc -s -nostdlib thrive.obj -o thrive.exe -lkernel32
+cc -s -nostdlib thrive.obj -o thrive.exe -lkernel32
