@@ -304,18 +304,116 @@ THRIVE_API u8 win32_io_file_write(
     return 1;
 }
 
+THRIVE_API i32 thrive_f64_to_string(
+    u8 *buf,
+    f64 value,
+    i32 decimals, i32 width,
+    u8 pad_char)
+{
+    u8 tmp[32];
+    i32 p = 0, n = 0, neg = 0;
+    i32 whole, frac, pow = 1;
+    f64 x;
+    i32 i;
+
+    if (value < 0.0)
+    {
+        neg = 1;
+        value = -value;
+    }
+
+    whole = (i32)value;
+    x = value - (f64)whole;
+
+    /* compute fraction multiplier: 10^decimals */
+    for (i = 0; i < decimals; ++i)
+    {
+        pow *= 10;
+    }
+
+    frac = (i32)(x * (f64)pow + 0.5); /* round properly */
+
+    /* rollover case, e.g. 1.9999 with rounding becomes 2.000 */
+    if (frac >= pow)
+    {
+        frac -= pow;
+        whole += 1;
+    }
+
+    /* convert integer part into tmp (reverse) */
+    {
+        i32 w = whole;
+
+        if (w == 0)
+        {
+            tmp[n++] = '0';
+        }
+
+        while (w > 0)
+        {
+            tmp[n++] = (u8)('0' + (w % 10));
+            w /= 10;
+        }
+    }
+
+    /* compute total length needed */
+    {
+        i32 total = n + (neg ? 1 : 0) + (decimals ? (1 + decimals) : 0);
+        i32 pad_needed = width - total;
+
+        /* left padding */
+        while (pad_needed-- > 0)
+        {
+            buf[p++] = pad_char;
+        }
+    }
+
+    /* sign */
+    if (neg)
+    {
+        buf[p++] = '-';
+    }
+
+    /* append integer part (reverse) */
+    while (n--)
+    {
+        buf[p++] = tmp[n];
+    }
+
+    /* decimals */
+    if (decimals > 0)
+    {
+        buf[p++] = '.';
+
+        for (i = decimals - 1; i >= 0; --i)
+        {
+            i32 d = (i32)((frac / pow) % 10);
+
+            buf[p++] = (u8)('0' + d);
+            pow /= 10;
+
+            if (i == 0)
+            {
+                break;
+            }
+        }
+    }
+
+    buf[p] = '\0';
+
+    return p;
+}
 THRIVE_API void win32_io_print_ms(void *hConsole, u8 *name, u32 name_length, f64 ms, f64 ms_total)
 {
     unsigned long written;
 
     u8 buf[128];
-    u8 tmp[16];
+    u8 num[32];
     u8 *p = buf;
     u32 i;
     f64 ms_mid = 0.02;
     f64 ms_high = 0.75;
 
-    /* header: "[thrive] " */
     *p++ = '[';
     *p++ = 't';
     *p++ = 'h';
@@ -334,92 +432,30 @@ THRIVE_API void win32_io_print_ms(void *hConsole, u8 *name, u32 name_length, f64
     *p++ = ':';
     *p++ = ' ';
 
-    /* print ms with 6 decimals */
     {
-        i32 whole = (i32)ms;
-        i32 frac = (i32)((ms - (f64)whole) * 1000000.0); /* 6 decimals */
-        i32 n = 0;
+        i32 len = thrive_f64_to_string(num, ms, 6, 0, ' ');
 
-        if (frac < 0)
+        for (i = 0; i < (u32)len; ++i)
         {
-            frac = 0;
+            *p++ = num[i];
         }
-        else if (frac > 999999)
-        {
-            frac = 999999;
-        }
-
-        /* convert integer part */
-        do
-        {
-            tmp[n++] = (u8)('0' + (whole % 10));
-            whole /= 10;
-        } while (whole > 0);
-
-        while (n--)
-        {
-            *p++ = tmp[n];
-        }
-
-        *p++ = '.';
-
-        /* 6 padded decimals */
-        *p++ = (u8)('0' + (frac / 100000) % 10);
-        *p++ = (u8)('0' + (frac / 10000) % 10);
-        *p++ = (u8)('0' + (frac / 1000) % 10);
-        *p++ = (u8)('0' + (frac / 100) % 10);
-        *p++ = (u8)('0' + (frac / 10) % 10);
-        *p++ = (u8)('0' + (frac % 10));
     }
 
     /* suffix */
     *p++ = 'm';
     *p++ = 's';
 
-    /* print percentage with 1 decimal place (padded right) */
     {
         f64 percent = (ms_total > 0.0) ? (ms / ms_total * 100.0) : 0.0;
-        i32 whole = (i32)percent;
-        i32 frac = (i32)((percent - (f64)whole) * 10.0); /* one decimal */
-
-        if (frac < 0)
-        {
-            frac = 0;
-        }
-        else if (frac > 9)
-        {
-            frac = 9;
-        }
+        i32 len = thrive_f64_to_string(num, percent, 1, 5, ' ');
 
         *p++ = ' ';
 
-        if (whole < 10)
+        for (i = 0; i < (u32)len; ++i)
         {
-            *p++ = ' ';
-            *p++ = ' ';
-        }
-        else if (whole < 100)
-        {
-            *p++ = ' ';
+            *p++ = num[i];
         }
 
-        /* integer part */
-        {
-            i32 n = 0;
-            do
-            {
-                tmp[n++] = (u8)('0' + (whole % 10));
-                whole /= 10;
-            } while (whole > 0);
-
-            while (n--)
-            {
-                *p++ = tmp[n];
-            }
-        }
-
-        *p++ = '.';
-        *p++ = (u8)('0' + frac);
         *p++ = '%';
     }
 
@@ -553,15 +589,13 @@ THRIVE_API thrive_allocator *thrive_allocator_create(u32 source_size)
     return arena;
 }
 
-THRIVE_API i32 compile(char *file_name, LARGE_INTEGER *freq)
+THRIVE_API i32 compile(char *file_name, void *hConsole, LARGE_INTEGER *freq)
 {
     unsigned long written = 0;
     win32_thrive_metric metrics[METRIC_COUNT];
 
     u32 file_size = 0;
     u8 *file_memory;
-
-    void *hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
 
     /* Read entire file */
     QueryPerformanceCounter(&metrics[METRIC_IO_FILE_READ].time_start);
@@ -698,7 +732,7 @@ THRIVE_API i32 start(i32 argc, u8 **argv)
             if (CompareFileTime(&file_time_current, &file_time_previous) != 0)
             {
                 WriteConsoleA(hConsole, "[thrive] recompile\n", 19, &written, 0);
-                compile(file_name, &freq);
+                compile(file_name, hConsole, &freq);
             }
 
             Sleep(5);
@@ -707,7 +741,7 @@ THRIVE_API i32 start(i32 argc, u8 **argv)
         }
     }
 
-    return compile(file_name, &freq);
+    return compile(file_name, hConsole, &freq);
 }
 
 /* ############################################################################
