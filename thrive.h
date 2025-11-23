@@ -13,7 +13,7 @@ LANGUAGE SPECIFICATON (WIP)
     - no standard library
     - no recursive functions
     - all loop conditions must have a max bound
-    
+
   Types:
     - s8, s16, s32      ; String type
     - b8, b16, b32, b64 ; Boolean type
@@ -1754,6 +1754,8 @@ THRIVE_API void thrive_codegen(
 {
     thrive_codegen_ctx ctx;
     u32 i;
+    u8 has_section_data = 0;
+    u8 has_section_bss = 0;
     thrive_ast_type last_type = (thrive_ast_type)-1;
 
     ctx.buf = code;
@@ -1793,12 +1795,16 @@ THRIVE_API void thrive_codegen(
     }
 
     /* --- Pass 2: Emit .data Section --- */
-    thrive_cg_emit_str(&ctx, "segment .data\n");
-
     for (i = 0; i < ctx.globals_count; ++i)
     {
         if (ctx.globals[i].section == SECTION_DATA)
         {
+            if (!has_section_data)
+            {
+                thrive_cg_emit_str(&ctx, "segment .data\n");
+                has_section_data = 1;
+            }
+
             thrive_cg_emit_str(&ctx, "    ");
             thrive_cg_emit_str(&ctx, (char *)ctx.globals[i].name);
             thrive_cg_emit_str(&ctx, ": dq "); /* Using dq (64bit) for simplicity */
@@ -1806,20 +1812,33 @@ THRIVE_API void thrive_codegen(
             thrive_cg_emit_char(&ctx, '\n');
         }
     }
-    thrive_cg_emit_char(&ctx, '\n');
+
+    if (has_section_data)
+    {
+        thrive_cg_emit_char(&ctx, '\n');
+    }
 
     /* --- Pass 3: Emit .bss Section --- */
-    thrive_cg_emit_str(&ctx, "segment .bss\n");
     for (i = 0; i < ctx.globals_count; ++i)
     {
         if (ctx.globals[i].section == SECTION_BSS)
         {
+            if (!has_section_bss)
+            {
+                thrive_cg_emit_str(&ctx, "segment .bss\n");
+                has_section_bss = 1;
+            }
+
             thrive_cg_emit_str(&ctx, "    ");
             thrive_cg_emit_str(&ctx, (char *)ctx.globals[i].name);
             thrive_cg_emit_str(&ctx, ": resq 1\n");
         }
     }
-    thrive_cg_emit_char(&ctx, '\n');
+
+    if (has_section_bss)
+    {
+        thrive_cg_emit_char(&ctx, '\n');
+    }
 
     /* --- Pass 4: Emit .text Section --- */
     thrive_cg_emit_str(&ctx, "segment .text\nglobal main\nextern ExitProcess\n\nmain:\n");
