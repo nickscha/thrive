@@ -589,13 +589,16 @@ THRIVE_API thrive_allocator *thrive_allocator_create(u32 source_size)
     return arena;
 }
 
-THRIVE_API i32 compile(char *file_name, void *hConsole, LARGE_INTEGER *freq)
+THRIVE_API i32 compile(u8 enable_optimized, char *file_name, void *hConsole, LARGE_INTEGER *freq)
 {
     unsigned long written = 0;
     win32_thrive_metric metrics[METRIC_COUNT];
 
     u32 file_size = 0;
     u8 *file_memory;
+
+    (void)*thrive_token_type_names;
+    (void)thrive_ast_optimize;
 
     /* Read entire file */
     QueryPerformanceCounter(&metrics[METRIC_IO_FILE_READ].time_start);
@@ -613,8 +616,6 @@ THRIVE_API i32 compile(char *file_name, void *hConsole, LARGE_INTEGER *freq)
     /* Compilation */
     {
         thrive_allocator *ta = thrive_allocator_create(file_size);
-
-        (void)*thrive_token_type_names;
 
         if (!ta)
         {
@@ -641,19 +642,22 @@ THRIVE_API i32 compile(char *file_name, void *hConsole, LARGE_INTEGER *freq)
         thrive_codegen(ta->ast, ta->ast_size, ta->asm_code, ta->asm_code_capacity, &ta->asm_code_size);
         QueryPerformanceCounter(&metrics[METRIC_ASM].time_end);
 
-        /* Optimize AST */
-        QueryPerformanceCounter(&metrics[METRIC_AST_OPTIMIZED].time_start);
-        thrive_ast_optimize(ta->ast, &ta->ast_size);
-        QueryPerformanceCounter(&metrics[METRIC_AST_OPTIMIZED].time_end);
+        if (enable_optimized)
+        {
+            /* Optimize AST */
+            QueryPerformanceCounter(&metrics[METRIC_AST_OPTIMIZED].time_start);
+            thrive_ast_optimize(ta->ast, &ta->ast_size);
+            QueryPerformanceCounter(&metrics[METRIC_AST_OPTIMIZED].time_end);
 
-        /* Generate Optimized Assembly */
-        QueryPerformanceCounter(&metrics[METRIC_ASM_OPTIMIZED].time_start);
-        thrive_codegen(ta->ast, ta->ast_size, ta->asm_code, ta->asm_code_capacity, &ta->asm_code_size);
-        QueryPerformanceCounter(&metrics[METRIC_ASM_OPTIMIZED].time_end);
+            /* Generate Assembly  */
+            QueryPerformanceCounter(&metrics[METRIC_ASM_OPTIMIZED].time_start);
+            thrive_codegen(ta->ast, ta->ast_size, ta->asm_code, ta->asm_code_capacity, &ta->asm_code_size);
+            QueryPerformanceCounter(&metrics[METRIC_ASM_OPTIMIZED].time_end);
+        }
 
         /* Write assembly file */
         QueryPerformanceCounter(&metrics[METRIC_IO_FILE_WRITE].time_start);
-        win32_io_file_write("thrive_optimized.asm", ta->asm_code, ta->asm_code_size);
+        win32_io_file_write("thrive.asm", ta->asm_code, ta->asm_code_size);
         QueryPerformanceCounter(&metrics[METRIC_IO_FILE_WRITE].time_end);
 
         VirtualFree(file_memory, 0, MEM_RELEASE);
@@ -734,7 +738,7 @@ THRIVE_API i32 start(i32 argc, u8 **argv)
         }
     }
 
-    (void) conf_enable_optimized;
+    (void)conf_enable_optimized;
 
     /* Query the CPU Frequency once */
     QueryPerformanceFrequency(&freq);
@@ -754,7 +758,7 @@ THRIVE_API i32 start(i32 argc, u8 **argv)
             if (CompareFileTime(&file_time_current, &file_time_previous) != 0)
             {
                 WriteConsoleA(hConsole, "[thrive] recompile\n", 19, &written, 0);
-                compile(file_name, hConsole, &freq);
+                compile(conf_enable_optimized, file_name, hConsole, &freq);
             }
 
             Sleep(5);
@@ -763,7 +767,7 @@ THRIVE_API i32 start(i32 argc, u8 **argv)
         }
     }
 
-    return compile(file_name, hConsole, &freq);
+    return compile(conf_enable_optimized, file_name, hConsole, &freq);
 }
 
 /* ############################################################################
