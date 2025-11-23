@@ -1037,19 +1037,8 @@ THRIVE_API void thrive_ast_parse(
  * # [SECTION] AST Optimizer
  * #############################################################################
  */
-#define MAX_CONSTANTS 128
-#define MAX_AST_NODES 1024
-
-THRIVE_API u32 thrive_hash_name(u8 *name)
-{
-    u32 hash = 5381;
-    u8 c;
-    while ((c = *name++))
-    {
-        hash = ((hash << 5) + hash) + c;
-    }
-    return hash % MAX_CONSTANTS;
-}
+#define THRIVE_MAX_CONSTANTS 128
+#define THRIVE_MAX_AST_NODES 1024
 
 typedef struct thrive_const_symbol
 {
@@ -1064,17 +1053,28 @@ typedef struct thrive_const_symbol
 
 } thrive_const_symbol;
 
-typedef struct thrive_optimizer_ctx
+typedef struct thrive_optimize_context
 {
     thrive_ast *ast;
     u32 ast_size;
-    thrive_const_symbol constants[MAX_CONSTANTS];
+    thrive_const_symbol constants[THRIVE_MAX_CONSTANTS];
     u32 count;
-} thrive_optimizer_ctx;
+} thrive_optimize_context;
 
-THRIVE_API thrive_const_symbol *thrive_ast_find_const(thrive_optimizer_ctx *ctx, u8 *name)
+THRIVE_API u32 thrive_ast_optimize_hash_name(u8 *name)
 {
-    u32 initial_idx = thrive_hash_name(name);
+    u32 hash = 5381;
+    u8 c;
+    while ((c = *name++))
+    {
+        hash = ((hash << 5) + hash) + c;
+    }
+    return hash % THRIVE_MAX_CONSTANTS;
+}
+
+THRIVE_API thrive_const_symbol *thrive_ast_optimize_find_const(thrive_optimize_context *ctx, u8 *name)
+{
+    u32 initial_idx = thrive_ast_optimize_hash_name(name);
     u32 idx = initial_idx;
 
     if (name[0] == 0)
@@ -1093,25 +1093,25 @@ THRIVE_API thrive_const_symbol *thrive_ast_find_const(thrive_optimizer_ctx *ctx,
             return (thrive_const_symbol *)((void *)0);
         }
 
-        idx = (idx + 1) % MAX_CONSTANTS;
+        idx = (idx + 1) % THRIVE_MAX_CONSTANTS;
 
     } while (idx != initial_idx);
 
     return (thrive_const_symbol *)((void *)0);
 }
 
-THRIVE_API void thrive_ast_register_const(thrive_optimizer_ctx *ctx, u8 *name, u8 is_float, i32 i_val, f64 f_val)
+THRIVE_API void thrive_ast_optimize_register_const(thrive_optimize_context *ctx, u8 *name, u8 is_float, i32 i_val, f64 f_val)
 {
-    u32 initial_idx = thrive_hash_name(name);
+    u32 initial_idx = thrive_ast_optimize_hash_name(name);
     u32 idx = initial_idx;
     u32 k = 0;
 
-    if (ctx->count >= MAX_CONSTANTS)
+    if (ctx->count >= THRIVE_MAX_CONSTANTS)
     {
         return;
     }
 
-    if (thrive_ast_find_const(ctx, name))
+    if (thrive_ast_optimize_find_const(ctx, name))
     {
         return;
     }
@@ -1141,13 +1141,13 @@ THRIVE_API void thrive_ast_register_const(thrive_optimizer_ctx *ctx, u8 *name, u
 
             return;
         }
-        idx = (idx + 1) % MAX_CONSTANTS;
+        idx = (idx + 1) % THRIVE_MAX_CONSTANTS;
 
     } while (idx != initial_idx);
 }
 
 /* --- Constant Folding & Propagation Logic --- */
-THRIVE_API u8 thrive_ast_try_propagate_var(thrive_optimizer_ctx *ctx, u16 node_id)
+THRIVE_API u8 thrive_ast_optimize_try_propagate_var(thrive_optimize_context *ctx, u16 node_id)
 {
     thrive_ast *node = &ctx->ast[node_id];
     thrive_const_symbol *sym;
@@ -1157,7 +1157,7 @@ THRIVE_API u8 thrive_ast_try_propagate_var(thrive_optimizer_ctx *ctx, u16 node_i
         return 0;
     }
 
-    sym = thrive_ast_find_const(ctx, node->v.name);
+    sym = thrive_ast_optimize_find_const(ctx, node->v.name);
     if (sym)
     {
         if (sym->is_float)
@@ -1175,7 +1175,7 @@ THRIVE_API u8 thrive_ast_try_propagate_var(thrive_optimizer_ctx *ctx, u16 node_i
     return 0;
 }
 
-THRIVE_API u8 thrive_ast_try_fold_binary(thrive_ast *ast, u16 node_id)
+THRIVE_API u8 thrive_ast_optimize_try_fold_binary(thrive_ast *ast, u16 node_id)
 {
     thrive_ast *node = &ast[node_id];
     thrive_ast *left_node, *right_node;
@@ -1262,7 +1262,7 @@ THRIVE_API u8 thrive_ast_try_fold_binary(thrive_ast *ast, u16 node_id)
     return 0;
 }
 
-THRIVE_API void thrive_ast_optimize_node(thrive_optimizer_ctx *ctx, u16 node_id)
+THRIVE_API void thrive_ast_optimize_node(thrive_optimize_context *ctx, u16 node_id)
 {
     thrive_ast *node;
 
@@ -1282,7 +1282,7 @@ THRIVE_API void thrive_ast_optimize_node(thrive_optimizer_ctx *ctx, u16 node_id)
     case AST_ASSIGN:
         thrive_ast_optimize_node(ctx, node->v.op.left);
         thrive_ast_optimize_node(ctx, node->v.op.right);
-        thrive_ast_try_fold_binary(ctx->ast, node_id);
+        thrive_ast_optimize_try_fold_binary(ctx->ast, node_id);
         break;
     case AST_DECL:
         thrive_ast_optimize_node(ctx, node->v.decl.expr);
@@ -1291,14 +1291,14 @@ THRIVE_API void thrive_ast_optimize_node(thrive_optimizer_ctx *ctx, u16 node_id)
         thrive_ast_optimize_node(ctx, node->v.expr);
         break;
     case AST_VAR:
-        thrive_ast_try_propagate_var(ctx, node_id);
+        thrive_ast_optimize_try_propagate_var(ctx, node_id);
         break;
     default:
         break;
     }
 }
 
-THRIVE_API void thrive_ast_scan_constants(thrive_optimizer_ctx *ctx)
+THRIVE_API void thrive_ast_optimize_scan_constants(thrive_optimize_context *ctx)
 {
     u32 i;
     thrive_ast *ast = ctx->ast;
@@ -1312,11 +1312,11 @@ THRIVE_API void thrive_ast_scan_constants(thrive_optimizer_ctx *ctx)
 
             if (expr_node->type == AST_INT)
             {
-                thrive_ast_register_const(ctx, ast[i].v.decl.name, 0, expr_node->v.int_val, 0.0);
+                thrive_ast_optimize_register_const(ctx, ast[i].v.decl.name, 0, expr_node->v.int_val, 0.0);
             }
             else if (expr_node->type == AST_FLOAT)
             {
-                thrive_ast_register_const(ctx, ast[i].v.decl.name, 1, 0, expr_node->v.float_val);
+                thrive_ast_optimize_register_const(ctx, ast[i].v.decl.name, 1, 0, expr_node->v.float_val);
             }
         }
     }
@@ -1324,7 +1324,7 @@ THRIVE_API void thrive_ast_scan_constants(thrive_optimizer_ctx *ctx)
 
 /* --- General Dead Code Elimination (Mark-Sweep-Compact) --- */
 
-THRIVE_API void thrive_ast_mark_alive(thrive_ast *ast, u8 *alive_map, u16 node_id)
+THRIVE_API void thrive_ast_optimize_mark_alive(thrive_ast *ast, u8 *alive_map, u16 node_id)
 {
     thrive_ast *node;
 
@@ -1344,25 +1344,24 @@ THRIVE_API void thrive_ast_mark_alive(thrive_ast *ast, u8 *alive_map, u16 node_i
     case AST_MUL:
     case AST_DIV:
     case AST_ASSIGN:
-        thrive_ast_mark_alive(ast, alive_map, node->v.op.left);
-        thrive_ast_mark_alive(ast, alive_map, node->v.op.right);
+        thrive_ast_optimize_mark_alive(ast, alive_map, node->v.op.left);
+        thrive_ast_optimize_mark_alive(ast, alive_map, node->v.op.right);
         break;
     case AST_DECL:
-        thrive_ast_mark_alive(ast, alive_map, node->v.decl.expr);
+        thrive_ast_optimize_mark_alive(ast, alive_map, node->v.decl.expr);
         break;
     case AST_RETURN:
-        thrive_ast_mark_alive(ast, alive_map, node->v.expr);
+        thrive_ast_optimize_mark_alive(ast, alive_map, node->v.expr);
         break;
     default:
         break;
     }
 }
 
-THRIVE_API void thrive_ast_compact(thrive_ast *ast, u32 *ast_size)
+THRIVE_API void thrive_ast_optimize_compact(thrive_ast *ast, u32 *ast_size)
 {
-    /* C89 requires variables at start */
-    u8 alive_map[MAX_AST_NODES];  /* 1 if node is used, 0 otherwise */
-    u16 index_map[MAX_AST_NODES]; /* Maps old_index -> new_index */
+    u8 alive_map[THRIVE_MAX_AST_NODES];  /* 1 if node is used, 0 otherwise */
+    u16 index_map[THRIVE_MAX_AST_NODES]; /* Maps old_index -> new_index */
     u32 i, write_idx;
     u32 old_size = *ast_size;
     thrive_ast *node;
@@ -1384,7 +1383,7 @@ THRIVE_API void thrive_ast_compact(thrive_ast *ast, u32 *ast_size)
     {
         if (ast[i].type == AST_RETURN || ast[i].type == AST_ASSIGN)
         {
-            thrive_ast_mark_alive(ast, alive_map, (u16)i);
+            thrive_ast_optimize_mark_alive(ast, alive_map, (u16)i);
         }
     }
 
@@ -1436,20 +1435,20 @@ THRIVE_API void thrive_ast_compact(thrive_ast *ast, u32 *ast_size)
 
 THRIVE_API void thrive_ast_optimize(thrive_ast *ast, u32 *ast_size_ptr)
 {
-    thrive_optimizer_ctx ctx;
+    thrive_optimize_context ctx;
     u32 i;
 
     ctx.ast = ast;
     ctx.ast_size = *ast_size_ptr;
     ctx.count = 0;
 
-    for (i = 0; i < MAX_CONSTANTS; ++i)
+    for (i = 0; i < THRIVE_MAX_CONSTANTS; ++i)
     {
         ctx.constants[i].name[0] = 0;
     }
 
     /* Pass 1 & 2: Scan and Propagate (First Pass) */
-    thrive_ast_scan_constants(&ctx);
+    thrive_ast_optimize_scan_constants(&ctx);
 
     for (i = 0; i < ctx.ast_size; ++i)
     {
@@ -1460,7 +1459,7 @@ THRIVE_API void thrive_ast_optimize(thrive_ast *ast, u32 *ast_size_ptr)
     }
 
     /* Pass 3 & 4: Rescan and Propagate (Second Pass for deep folding) */
-    thrive_ast_scan_constants(&ctx);
+    thrive_ast_optimize_scan_constants(&ctx);
     for (i = 0; i < ctx.ast_size; ++i)
     {
         /* Primarily target returns for final propagation */
@@ -1471,14 +1470,14 @@ THRIVE_API void thrive_ast_optimize(thrive_ast *ast, u32 *ast_size_ptr)
     }
 
     /* Pass 5: General Dead Code Elimination */
-    thrive_ast_compact(ast, ast_size_ptr);
+    thrive_ast_optimize_compact(ast, ast_size_ptr);
 }
 
 /* #############################################################################
  * # [SECTION] Codegen x86_64 (NASM) Win32
  * #############################################################################
  */
-#define MAX_GLOBALS 128
+#define THRIVE_MAX_GLOBALS 128
 
 typedef enum thrive_sym_section
 {
@@ -1503,7 +1502,7 @@ typedef struct thrive_codegen_ctx
     /* AST & State */
     thrive_ast *ast;
     u32 ast_size;
-    thrive_symbol globals[MAX_GLOBALS];
+    thrive_symbol globals[THRIVE_MAX_GLOBALS];
     u32 globals_count;
 
 } thrive_codegen_ctx;
@@ -1616,7 +1615,7 @@ THRIVE_API void thrive_register_global(thrive_codegen_ctx *ctx, u8 *name, thrive
         return; /* Already exists */
     }
 
-    if (ctx->globals_count >= MAX_GLOBALS)
+    if (ctx->globals_count >= THRIVE_MAX_GLOBALS)
     {
         return;
     }
