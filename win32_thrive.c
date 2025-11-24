@@ -18,10 +18,12 @@ int _fltused = 0;
 void *memset(void *dest, int c, unsigned int count)
 {
     char *bytes = (char *)dest;
+
     while (count--)
     {
         *bytes++ = (char)c;
     }
+
     return dest;
 }
 
@@ -32,10 +34,12 @@ void *memcpy(void *dest, void *src, unsigned int count)
 {
     char *dest8 = (char *)dest;
     char *src8 = (char *)src;
+
     while (count--)
     {
         *dest8++ = *src8++;
     }
+
     return dest;
 }
 
@@ -744,7 +748,7 @@ THRIVE_API i32 start(i32 argc, u8 **argv)
     if (argc >= 2)
     {
         i32 i;
-        
+
         for (i = 2; i < argc; ++i)
         {
             if (thrive_string_equals(argv[i], (u8 *)"--hot-reload"))

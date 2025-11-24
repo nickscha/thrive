@@ -1,4 +1,5 @@
 u32 a   = 42
 u32 b   = 27
-u32 res = a + b * 10.0f * (2 + 4)
+u32 c   = 1
+u32 res = a * c + b * 10.0f * (2 + 4)
 ret res

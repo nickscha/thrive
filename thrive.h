@@ -902,7 +902,6 @@ THRIVE_API u16 thrive_ast_parse_primary(thrive_parser *p)
         return inner;
     }
 
-    /* unreachable for your language */
     return 0;
 }
 
