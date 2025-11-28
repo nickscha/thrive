@@ -23,7 +23,7 @@ cc -s -O2 %DEF_COMPILER_FLAGS% win32_thrive.c -o win32_thrive.exe %DEF_FLAGS_LIN
 REM ---------------------------------------------------------------------------
 REM Run
 REM ---------------------------------------------------------------------------
-win32_thrive.exe hello.thrive --optimized
+win32_thrive.exe hello.thrive
 
 REM ---------------------------------------------------------------------------
 REM Assemble
