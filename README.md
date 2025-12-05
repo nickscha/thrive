@@ -19,12 +19,29 @@ Low Level Programming Language inbetween Assembly and C (THRIVE).
 </p>
 
 ## **Features**
-- **C89 compliant** — portable and legacy-friendly  
-- **Single-header API** — just include `thrive.h`  
-- **nostdlib** — no dependency on the C Standard Library  
-- **Minimal binary size** — optimized for small executables  
-- **Cross-platform** — Windows, Linux, MacOs 
-- **Strict compilation** — built with aggressive warnings & safety checks  
+- **Procedural** - No mixed declarations, ...
+- **Proper sized types** — b8,s8,u32,i32,f32,...  
+- **No header files** -
+- **No standard library** -  
+
+## Language Specification
+
+### Types
+
+```C
+s8, s16, s32      ; String 
+b8, b16, b32, b64 ; Boolean 
+u8, u16, u32, u64 ; Unsigned
+i8, i16, i32, i64 ; Signed
+f8, f16, f32, f64 ; Floating
+```
+
+### Variable Declaration
+
+```C
+u32 a = 24
+u32 b = a * (4 + 2)
+```
 
 ## Quick Start
 
