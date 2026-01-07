@@ -411,21 +411,6 @@ THRIVE_API i32 thrive_f64_to_string(
     return p;
 }
 
-THRIVE_API THRIVE_INLINE void thrive_error(thrive_token *token, u8 *message, u32 message_length)
-{
-    unsigned long written = 0;
-    void *hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
-
-    (void)token;
-
-    SetConsoleTextAttribute(hConsole, 12); /* red */
-    WriteConsoleA(hConsole, "[thrive] error: ", 16, &written, 0);
-    WriteConsoleA(hConsole, message, message_length, &written, 0);
-    SetConsoleTextAttribute(hConsole, 7); /* default */
-
-    ExitProcess(1);
-}
-
 THRIVE_API void win32_io_print_ms(void *hConsole, u8 *name, u32 name_length, f64 ms, f64 ms_total)
 {
     unsigned long written;
@@ -517,12 +502,7 @@ THRIVE_API void win32_io_print_ms(void *hConsole, u8 *name, u32 name_length, f64
 typedef enum win32_thrive_metrics
 {
     METRIC_IO_FILE_READ = 0,
-    METRIC_TOKENIZATION,
-    METRIC_AST,
-    METRIC_ASM,
-    METRIC_AST_OPTIMIZED,
-    METRIC_ASM_OPTIMIZED,
-    METRIC_IO_FILE_WRITE,
+    METRIC_COMPILATION,
     METRIC_COUNT
 
 } win32_thrive_metrics;
@@ -530,12 +510,7 @@ typedef enum win32_thrive_metrics
 /* Has to match with enum structure */
 static u8 *win32_thrive_metric_names[] = {
     (u8 *)"time_io_file_read ",
-    (u8 *)"time_tokenization ",
-    (u8 *)"time_ast          ",
-    (u8 *)"time_asm          ",
-    (u8 *)"time_ast_optimized",
-    (u8 *)"time_asm_optimized",
-    (u8 *)"time_io_file_write"};
+    (u8 *)"time_compilation  "};
 
 typedef struct win32_thrive_metric
 {
@@ -548,71 +523,7 @@ typedef struct win32_thrive_metric
  * # Thrive Compilation
  * ############################################################################
  */
-typedef struct thrive_allocator
-{
-    u8 *base;
-    u32 size;
-
-    thrive_token *tokens;
-    u32 tokens_capacity;
-    u32 tokens_size;
-
-    thrive_ast *ast;
-    u32 ast_capacity;
-    u32 ast_size;
-
-    u8 *asm_code;
-    u32 asm_code_capacity;
-    u32 asm_code_size;
-
-} thrive_allocator;
-
-THRIVE_API thrive_allocator *thrive_allocator_create(u32 source_size)
-{
-    thrive_allocator *arena;
-    u32 max_tokens, max_ast_nodes, asm_size;
-    u32 total_size;
-    u8 *ptr;
-
-    /* Estimate */
-    max_tokens = source_size;
-    max_ast_nodes = source_size;
-    asm_size = source_size * 16;
-
-    total_size =
-        (u32)(sizeof(thrive_allocator) +
-              max_tokens * sizeof(thrive_token) +
-              max_ast_nodes * sizeof(thrive_ast) +
-              asm_size);
-
-    arena = (thrive_allocator *)VirtualAlloc(0, total_size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
-
-    if (!arena)
-    {
-        return 0;
-    }
-
-    /* Subdivide */
-    ptr = (u8 *)(arena + 1);
-
-    arena->base = (u8 *)arena;
-    arena->size = total_size;
-
-    arena->tokens = (thrive_token *)ptr;
-    arena->tokens_capacity = max_tokens;
-    ptr += max_tokens * sizeof(thrive_token);
-
-    arena->ast = (thrive_ast *)ptr;
-    arena->ast_capacity = max_ast_nodes;
-    ptr += max_ast_nodes * sizeof(thrive_ast);
-
-    arena->asm_code = (u8 *)ptr;
-    arena->asm_code_capacity = asm_size;
-
-    return arena;
-}
-
-THRIVE_API i32 thrive_compile(u8 enable_optimized, char *file_name, void *hConsole, LARGE_INTEGER *freq)
+THRIVE_API i32 thrive_compile(char *file_name, void *hConsole, LARGE_INTEGER *freq)
 {
     unsigned long written = 0;
     win32_thrive_metric metrics[METRIC_COUNT] = {0};
@@ -620,12 +531,17 @@ THRIVE_API i32 thrive_compile(u8 enable_optimized, char *file_name, void *hConso
     u32 source_code_size = 0;
     u8 *source_code;
 
-    (void)*thrive_token_type_names;
-
     /* Read entire file */
     QueryPerformanceCounter(&metrics[METRIC_IO_FILE_READ].time_start);
     source_code = win32_io_file_read(file_name, &source_code_size);
     QueryPerformanceCounter(&metrics[METRIC_IO_FILE_READ].time_end);
+
+    /* Print source code */
+    SetConsoleTextAttribute(hConsole, 9); /* blue */
+    WriteConsoleA(hConsole, "[thrive] ", 9, &written, 0);
+    SetConsoleTextAttribute(hConsole, 7);
+    WriteConsoleA(hConsole, "source code:\n", 13, &written, 0);
+    WriteConsoleA(hConsole, source_code, thrive_string_length(source_code), &written, 0);
 
     if (!source_code)
     {
@@ -637,53 +553,18 @@ THRIVE_API i32 thrive_compile(u8 enable_optimized, char *file_name, void *hConso
 
     /* Compilation */
     {
-        thrive_allocator *ta = thrive_allocator_create(source_code_size);
+        thrive_status status = {0};
 
-        if (!ta)
+        QueryPerformanceCounter(&metrics[METRIC_COMPILATION].time_start);
+        status = thrive_lex(source_code, source_code_size);
+        QueryPerformanceCounter(&metrics[METRIC_COMPILATION].time_end);
+
+        if (status.type != THRIVE_STATUS_OK)
         {
             SetConsoleTextAttribute(hConsole, 12); /* red */
-            WriteConsoleA(hConsole, "[thrive] Cannot allocate memory for thrive_compiler!\n", 53, &written, 0);
+            WriteConsoleA(hConsole, status.message, thrive_string_length(status.message), &written, 0);
             SetConsoleTextAttribute(hConsole, 7);
-            VirtualFree(source_code, 0, MEM_RELEASE);
-
-            return 1;
         }
-
-        /* Generate Tokens */
-        QueryPerformanceCounter(&metrics[METRIC_TOKENIZATION].time_start);
-        thrive_tokenizer(source_code, source_code_size, ta->tokens, ta->tokens_capacity, &ta->tokens_size);
-        QueryPerformanceCounter(&metrics[METRIC_TOKENIZATION].time_end);
-
-        /* Generate AST */
-        QueryPerformanceCounter(&metrics[METRIC_AST].time_start);
-        thrive_ast_parse(ta->tokens, ta->tokens_size, ta->ast, ta->ast_capacity, &ta->ast_size);
-        QueryPerformanceCounter(&metrics[METRIC_AST].time_end);
-
-        /* Generate Assembly */
-        QueryPerformanceCounter(&metrics[METRIC_ASM].time_start);
-        thrive_codegen(ta->ast, ta->ast_size, ta->asm_code, ta->asm_code_capacity, &ta->asm_code_size);
-        QueryPerformanceCounter(&metrics[METRIC_ASM].time_end);
-
-        if (enable_optimized)
-        {
-            /* Optimize AST */
-            QueryPerformanceCounter(&metrics[METRIC_AST_OPTIMIZED].time_start);
-            thrive_ast_optimize(ta->ast, &ta->ast_size);
-            QueryPerformanceCounter(&metrics[METRIC_AST_OPTIMIZED].time_end);
-
-            /* Generate Assembly  */
-            QueryPerformanceCounter(&metrics[METRIC_ASM_OPTIMIZED].time_start);
-            thrive_codegen(ta->ast, ta->ast_size, ta->asm_code, ta->asm_code_capacity, &ta->asm_code_size);
-            QueryPerformanceCounter(&metrics[METRIC_ASM_OPTIMIZED].time_end);
-        }
-
-        /* Write assembly file */
-        QueryPerformanceCounter(&metrics[METRIC_IO_FILE_WRITE].time_start);
-        win32_io_file_write("thrive.asm", ta->asm_code, ta->asm_code_size);
-        QueryPerformanceCounter(&metrics[METRIC_IO_FILE_WRITE].time_end);
-
-        VirtualFree(source_code, 0, MEM_RELEASE);
-        VirtualFree(ta, 0, MEM_RELEASE);
     }
 
     /* Gather metrics */
@@ -732,6 +613,9 @@ THRIVE_API i32 start(i32 argc, u8 **argv)
     u8 conf_enable_hot_reload = 0;
     u8 conf_enable_optimized = 0;
 
+    (void)conf_enable_optimized;
+    (void)win32_io_file_write;
+
     /* Print usage */
     if (argc < 2)
     {
@@ -771,8 +655,6 @@ THRIVE_API i32 start(i32 argc, u8 **argv)
         }
     }
 
-    (void)conf_enable_optimized;
-
     /* Query the CPU Frequency once */
     QueryPerformanceFrequency(&freq);
 
@@ -791,7 +673,7 @@ THRIVE_API i32 start(i32 argc, u8 **argv)
             if (CompareFileTime(&file_time_current, &file_time_previous) != 0)
             {
                 WriteConsoleA(hConsole, "[thrive] recompile\n", 19, &written, 0);
-                thrive_compile(conf_enable_optimized, file_name, hConsole, &freq);
+                thrive_compile(file_name, hConsole, &freq);
             }
 
             Sleep(16);
@@ -800,7 +682,7 @@ THRIVE_API i32 start(i32 argc, u8 **argv)
         }
     }
 
-    return thrive_compile(conf_enable_optimized, file_name, hConsole, &freq);
+    return thrive_compile(file_name, hConsole, &freq);
 }
 
 /* ############################################################################
