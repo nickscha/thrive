@@ -1,4 +1,4 @@
-name: Manual Release of thrive.h with Changelog
+name: Manual Release of win32_thrive.c with Changelog
 
 on:
   workflow_dispatch:
@@ -9,9 +9,68 @@ on:
         type: string
 
 jobs:
+  build_x64:
+    name: Build x64
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compile win32_thrive
+        shell: bash
+        run: |
+          gcc -s -O2 -mconsole \
+            -std=c89 -pedantic -nodefaultlibs -nostdlib \
+            -mno-stack-arg-probe \
+            -Xlinker /STACK:0x100000,0x100000 \
+            -fno-builtin -ffreestanding \
+            -fno-asynchronous-unwind-tables \
+            -fuse-ld=lld \
+            -Wall -Wextra -Werror -Wvla -Wconversion \
+            -Wdouble-promotion -Wmissing-field-initializers \
+            -Wuninitialized -Winit-self -Wunused \
+            -Wunused-macros -Wunused-local-typedefs \
+            win32_thrive.c win32_thrive.res -o win32_thrive_x64.exe \
+            -lkernel32
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: binary-x64
+          path: win32_thrive_x64.exe
+
+  build_arm:
+    name: Build ARM
+    runs-on: windows-11-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compile win32_thrive
+        shell: bash
+        run: |
+          gcc -s -O2 -mconsole \
+            -std=c89 -pedantic -nodefaultlibs -nostdlib \
+            -mno-stack-arg-probe \
+            -Xlinker /STACK:0x100000,0x100000 \
+            -fno-builtin -ffreestanding \
+            -fno-asynchronous-unwind-tables \
+            -fuse-ld=lld \
+            -Wall -Wextra -Werror -Wvla -Wconversion \
+            -Wdouble-promotion -Wmissing-field-initializers \
+            -Wuninitialized -Winit-self -Wunused \
+            -Wunused-macros -Wunused-local-typedefs \
+            win32_thrive.c win32_thrive.res -o win32_thrive_arm.exe \
+            -lkernel32
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: binary-arm
+          path: win32_thrive_arm.exe
+
   release:
     name: Create GitHub Release
-    runs-on: ubuntu-latest
+    needs: [build_x64, build_arm]
+    runs-on: windows-latest
     permissions:
       contents: write
 
@@ -21,14 +80,22 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./dist
+          merge-multiple: true
+
       - name: Get latest release tag
         id: get_tag
+        shell: bash
         run: |
           latest_tag=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
           echo "latest_tag=$latest_tag" >> "$GITHUB_OUTPUT"
 
       - name: Get commit logs
         id: get_commits
+        shell: bash
         run: |
           if [ -z "${{ steps.get_tag.outputs.latest_tag }}" ]; then
             log_range="HEAD"
@@ -37,25 +104,22 @@ jobs:
             log_range="${{ steps.get_tag.outputs.latest_tag }}..HEAD"
             echo "Listing commits since tag ${{ steps.get_tag.outputs.latest_tag }}"
           fi
-          
+
           commit_log=$(git log --pretty=format:'* %s (%h)' $log_range)
-          
+
           echo "commits_body<<EOF" >> "$GITHUB_OUTPUT"
           echo "$commit_log" >> "$GITHUB_OUTPUT"
           echo "EOF" >> "$GITHUB_OUTPUT"
 
-      - name: Create Release
-        id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Create Release and Upload Assets
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event.inputs.version }}
-          release_name: "${{ github.event.inputs.version }}: thrive.h release"
+          name: "${{ github.event.inputs.version }}: win32_thrive.c release"
           body: |
-            # ${{ github.event.inputs.version }}: thrive - Low Level Programming Language inbetween Assembly and C Release.
+            # ${{ github.event.inputs.version }}: thrive - Low Level Programming Language Release.
 
-            A C89 standard compliant, single header, nostdlib (no C Standard Library) Low Level Programming Language inbetween Assembly and C (THRIVE).
+            A C89 standard compliant, nostdlib (no C Standard Library) Low Level Programming Language inbetween Assembly and C (THRIVE).
 
             ---
 
@@ -65,11 +129,18 @@ jobs:
 
             ---
 
+
+            ## Downloads
+            - **win32_thrive_x64.exe** (Windows x64)
+            - **win32_thrive_arm.exe** (Windows ARM)
+            ---
+
             ### What's Included
 
-            This release includes the `thrive.h` header file as well as testing and example codes ready to be used.
+            This release includes the `win32_thrive.c` source file as well as testing and example codes ready to be used.
 
             **Get started by downloading the source code today!**
 
-          draft: false
-          prerelease: false
+          files: ./dist/*.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

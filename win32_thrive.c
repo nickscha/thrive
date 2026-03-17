@@ -203,7 +203,7 @@ u8 *win32_io_file_read(char *filename, u32 *file_size_out)
         hFile = CreateFileA(
             filename,
             GENERIC_READ,
-            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, /* Hot-reload safe */
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
             (void *)0,
             OPEN_EXISTING,
             FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN,
@@ -556,7 +556,7 @@ THRIVE_API i32 thrive_compile(char *file_name, void *hConsole, LARGE_INTEGER *fr
         thrive_status status = {0};
 
         QueryPerformanceCounter(&metrics[METRIC_COMPILATION].time_start);
-        status = thrive_lex(source_code, source_code_size);
+        status = thrive_lexer(source_code, source_code_size);
         QueryPerformanceCounter(&metrics[METRIC_COMPILATION].time_end);
 
         if (status.type != THRIVE_STATUS_OK)

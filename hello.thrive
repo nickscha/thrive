@@ -1,3 +1,4 @@
+; this is a line comment
 u32 a   = 42
 u32 b   = 27
 u32 c   = 1

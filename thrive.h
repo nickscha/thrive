@@ -1,4 +1,4 @@
-/* thrive.h - v0.2 - public domain data structures - nickscha 2025
+/* thrive.h - v0.2 - public domain data structures - nickscha 2026
 
 A C89 standard compliant, nostdlib (no C Standard Library) Low Level Programming Language inbetween Assembly and C (THRIVE).
 
@@ -144,9 +144,12 @@ typedef struct thrive_token
     u32 offset; /* Offset index of the source code */
     u16 length; /* Length */
 
+    u16 line;
+    u8 column;
+
 } thrive_token;
 
-THRIVE_API thrive_status thrive_lex(u8 *source_code, u32 source_code_size)
+THRIVE_API thrive_status thrive_lexer(u8 *source_code, u32 source_code_size)
 {
     thrive_status status = {0};
 
@@ -164,49 +167,6 @@ THRIVE_API thrive_status thrive_lex(u8 *source_code, u32 source_code_size)
         return status;
     }
 
-    {
-        u8 *source_code_cursor = source_code;
-        u8 *code_end = source_code + source_code_size;
-
-        u32 source_code_row = 0;
-        u16 source_code_col = 0;
-
-        while (source_code_cursor < code_end)
-        {
-            u8 c = *source_code_cursor;
-
-            /* Check source code column width */
-            if (source_code_col > 79)
-            {
-                status.type = THRIVE_STATUS_ERROR_SYNTAX;
-                status.message = (u8 *)"Source code exceeded max column width of 80!\n";
-                return status;
-            }
-
-            /* Skip Whitespaces */
-            if (c == '\n')
-            {
-                source_code_row++;
-                source_code_col = 0;
-            }
-            else if (c == '\t')
-            {
-                status.type = THRIVE_STATUS_ERROR_SYNTAX;
-                status.message = (u8 *)"\\t is not allowed in thrive language!\n";
-                return status;
-            }
-            else if (c == ' ' || c == '\r')
-            {
-                source_code_col++;
-                source_code_cursor++;
-                continue;
-            }
-
-            source_code_col++;
-            source_code_cursor++;
-        }
-    }
-
     return status;
 }
 
@@ -217,7 +177,7 @@ THRIVE_API thrive_status thrive_lex(u8 *source_code, u32 source_code_size)
    This software is available under 2 licenses -- choose whichever you prefer.
    ------------------------------------------------------------------------------
    ALTERNATIVE A - MIT License
-   Copyright (c) 2025 nickscha
+   Copyright (c) 2026 nickscha
    Permission is hereby granted, free of charge, to any person obtaining a copy of
    this software and associated documentation files (the "Software"), to deal in
    the Software without restriction, including without limitation the rights to
