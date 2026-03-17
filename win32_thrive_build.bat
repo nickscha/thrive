@@ -7,7 +7,7 @@ REM
 set DEF_COMPILER_FLAGS=-std=c89 -pedantic -nodefaultlibs -nostdlib ^
 -mconsole -march=native -mtune=native -mno-stack-arg-probe ^
 -Xlinker /STACK:0x100000,0x100000 ^
--Xlinker /ENTRY:nostdlib_main ^
+-Xlinker /ENTRY:mainCRTStartup ^
 -fno-builtin -ffreestanding -fno-asynchronous-unwind-tables -fuse-ld=lld ^
 -Wall -Wextra -Werror -Wvla -Wconversion -Wdouble-promotion -Wsign-conversion ^
 -Wmissing-field-initializers -Wuninitialized -Winit-self ^
