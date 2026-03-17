@@ -8,20 +8,22 @@ LICENSE
   See end of file for detailed license information.
 
 */
+#include "thrive.h"
+
 #ifdef _MSC_VER
-int _fltused = 0;
+i32 _fltused = 0;
 #endif
 
 #ifdef _MSC_VER
 #pragma function(memset)
 #endif
-void *memset(void *dest, int c, unsigned int count)
+void *memset(void *dest, i32 c, u32 count)
 {
-    char *bytes = (char *)dest;
+    s8 *bytes = (s8 *)dest;
 
     while (count--)
     {
-        *bytes++ = (char)c;
+        *bytes++ = (s8)c;
     }
 
     return dest;
@@ -30,10 +32,10 @@ void *memset(void *dest, int c, unsigned int count)
 #ifdef _MSC_VER
 #pragma function(memcpy)
 #endif
-void *memcpy(void *dest, void *src, unsigned int count)
+void *memcpy(void *dest, void *src, u32 count)
 {
-    char *dest8 = (char *)dest;
-    char *src8 = (char *)src;
+    s8 *dest8 = (s8 *)dest;
+    s8 *src8 = (s8 *)src;
 
     while (count--)
     {
@@ -65,7 +67,7 @@ void *memcpy(void *dest, void *src, unsigned int count)
 #define PAGE_READWRITE 0x04
 
 /* Console IO */
-#define STD_OUTPUT_HANDLE ((unsigned long)-11)
+#define STD_OUTPUT_HANDLE ((u32) - 11)
 
 /* File IO */
 #define INVALID_HANDLE ((void *)-1)
@@ -79,42 +81,27 @@ void *memcpy(void *dest, void *src, unsigned int count)
 #define FILE_ATTRIBUTE_NORMAL 0x00000080
 #define FILE_ATTRIBUTE_TEMPORARY 0x00000100
 #define FILE_FLAG_SEQUENTIAL_SCAN 0x08000000
-#define INVALID_FILE_SIZE ((unsigned long)0xFFFFFFFF)
+#define INVALID_FILE_SIZE ((u32)0xFFFFFFFF)
 
 /* File Memory Mapping */
 #define PAGE_READONLY 0x02
 #define FILE_MAP_READ 0x0004
 
-/* Memory Management */
-WIN32_API(void *)
-VirtualAlloc(void *lpAddress, unsigned int dwSize, unsigned long flAllocationType, unsigned long flProtect);
-WIN32_API(int)
-VirtualFree(void *lpAddress, unsigned int dwSize, unsigned long dwFreeType);
-
-/* Console IO */
-WIN32_API(void *)
-GetStdHandle(unsigned long nStdHandle);
-WIN32_API(int)
-WriteConsoleA(void *hConsoleOutput, void *lpBuffer, unsigned long nNumberOfCharsToWrite, unsigned long *lpNumberOfCharsWritten, void *lpReserved);
-WIN32_API(char *)
-GetCommandLineA(void);
-
 /* File IO */
 typedef struct FILETIME
 {
-    unsigned long dwLowDateTime;
-    unsigned long dwHighDateTime;
-
+    u32 dwLowDateTime;
+    u32 dwHighDateTime;
 } FILETIME;
 
 typedef struct FILE_ATTRIBUTE_DATA
 {
-    unsigned long dwFileAttributes;
+    u32 dwFileAttributes;
     FILETIME ftCreationTime;
     FILETIME ftLastAccessTime;
     FILETIME ftLastWriteTime;
-    unsigned long nFileSizeHigh;
-    unsigned long nFileSizeLow;
+    u32 nFileSizeHigh;
+    u32 nFileSizeLow;
 } FILE_ATTRIBUTE_DATA;
 
 typedef enum GET_FILEEX_INFO_LEVELS
@@ -123,50 +110,49 @@ typedef enum GET_FILEEX_INFO_LEVELS
     GetFileExMaxInfoLevel
 } GET_FILEEX_INFO_LEVELS;
 
-WIN32_API(int)
-CloseHandle(void *hObject);
-WIN32_API(int)
-GetFileAttributesExA(char *lpFileName, GET_FILEEX_INFO_LEVELS fInfoLevelId, void *lpFileInformation);
-WIN32_API(long)
-CompareFileTime(FILETIME *lpFileTime1, FILETIME *lpFileTime2);
-WIN32_API(void *)
-CreateFileA(char *lpFileName, unsigned long dwDesiredAccess, unsigned long dwShareMode, void *, unsigned long dwCreationDisposition, unsigned long dwFlagsAndAttributes, void *hTemplateFile);
-WIN32_API(unsigned long)
-GetFileSize(void *hFile, unsigned long *lpFileSizeHigh);
-WIN32_API(int)
-ReadFile(void *hFile, void *lpBuffer, unsigned long nNumberOfBytesToRead, unsigned long *lpNumberOfBytesRead, void *lpOverlapped);
-WIN32_API(int)
-WriteFile(void *hFile, void *lpBuffer, unsigned long nNumberOfBytesToWrite, unsigned long *lpNumberOfBytesWritten, void *lpOverlapped);
-
-/* File Memory Mapping */
-WIN32_API(void *)
-CreateFileMappingA(void *hFile, void *lpFileMappingAttributes, unsigned long flProtect, unsigned long dwMaximumSizeHigh, unsigned long dwMaximumSizeLow, char *lpName);
-WIN32_API(void *)
-MapViewOfFile(void *hFileMappingObject, unsigned long dwDesiredAccess, unsigned long dwFileOffsetHigh, unsigned long dwFileOffsetLow, unsigned long dwNumberOfBytesToMap);
-
 /* Performance Metrics */
 typedef struct LARGE_INTEGER
 {
-    unsigned long LowPart;
-    long HighPart;
+    u32 LowPart;
+    i32 HighPart;
 
 } LARGE_INTEGER;
 
-WIN32_API(int)
-QueryPerformanceCounter(LARGE_INTEGER *lpPerformanceCount);
-WIN32_API(int)
-QueryPerformanceFrequency(LARGE_INTEGER *lpFrequency);
-WIN32_API(int)
-SetConsoleTextAttribute(void *hConsoleOutput, unsigned short wAttributes);
+/* clang-format off */
 
-WIN32_API(void)
-Sleep(unsigned long dwMilliseconds);
-WIN32_API(void)
-ExitProcess(unsigned int uExitCode);
+/* Memory Management */
+WIN32_API(void *) VirtualAlloc(void *lpAddress, u32 dwSize, u32 flAllocationType, u32 flProtect);
+WIN32_API(i32)    VirtualFree(void *lpAddress, u32 dwSize, u32 dwFreeType);
 
+/* Console IO */
+WIN32_API(void *) GetStdHandle(u32 nStdHandle);
+WIN32_API(i32)    WriteConsoleA(void *hConsoleOutput, void *lpBuffer, u32 nNumberOfCharsToWrite, u32 *lpNumberOfCharsWritten, void *lpReserved);
+WIN32_API(s8 *)   GetCommandLineA(void);
+
+/* File IO */
+WIN32_API(i32)    CloseHandle(void *hObject);
+WIN32_API(i32)    GetFileAttributesExA(s8 *lpFileName, GET_FILEEX_INFO_LEVELS fInfoLevelId, void *lpFileInformation);
+WIN32_API(i32)    CompareFileTime(FILETIME *lpFileTime1, FILETIME *lpFileTime2);
+WIN32_API(void *) CreateFileA(s8 *lpFileName, u32 dwDesiredAccess, u32 dwShareMode, void *, u32 dwCreationDisposition, u32 dwFlagsAndAttributes, void *hTemplateFile);
+WIN32_API(u32)    GetFileSize(void *hFile, u32 *lpFileSizeHigh);
+WIN32_API(i32)    ReadFile(void *hFile, void *lpBuffer, u32 nNumberOfBytesToRead, u32 *lpNumberOfBytesRead, void *lpOverlapped);
+WIN32_API(i32)    WriteFile(void *hFile, void *lpBuffer, u32 nNumberOfBytesToWrite, u32 *lpNumberOfBytesWritten, void *lpOverlapped);
+
+/* File Memory Mapping */
+WIN32_API(void *) CreateFileMappingA(void *hFile, void *lpFileMappingAttributes, u32 flProtect, u32 dwMaximumSizeHigh, u32 dwMaximumSizeLow, s8 *lpName);
+WIN32_API(void *) MapViewOfFile(void *hFileMappingObject, u32 dwDesiredAccess, u32 dwFileOffsetHigh, u32 dwFileOffsetLow, u32 dwNumberOfBytesToMap);
+
+/* Performance Metrics */
+WIN32_API(i32)    QueryPerformanceCounter(LARGE_INTEGER *lpPerformanceCount);
+WIN32_API(i32)    QueryPerformanceFrequency(LARGE_INTEGER *lpFrequency);
+WIN32_API(i32)    SetConsoleTextAttribute(void *hConsoleOutput, u16 wAttributes);
+
+/* General */
+WIN32_API(void)   Sleep(u32 dwMilliseconds);
+WIN32_API(void)   ExitProcess(u32 uExitCode);
+
+/* clang-format on */
 #endif /* _WINDOWS_ */
-
-#include "thrive.h"
 
 THRIVE_API f64 win32_elapsed_ms(
     LARGE_INTEGER *start,
@@ -181,18 +167,18 @@ THRIVE_API f64 win32_elapsed_ms(
 
 #define FILE_MMAP_THRESHOLD (1024 * 1024) /* 1 MB */
 
-THRIVE_API THRIVE_INLINE FILETIME win32_io_file_mod_time(char *file)
+THRIVE_API THRIVE_INLINE FILETIME win32_io_file_mod_time(s8 *file)
 {
     static FILETIME empty = {0, 0};
     FILE_ATTRIBUTE_DATA fad;
     return GetFileAttributesExA(file, GetFileExInfoStandard, &fad) ? fad.ftLastWriteTime : empty;
 }
 
-u8 *win32_io_file_read(char *filename, u32 *file_size_out)
+u8 *win32_io_file_read(s8 *filename, u32 *file_size_out)
 {
     void *hFile = INVALID_HANDLE;
-    unsigned long fileSize = 0;
-    unsigned long bytesRead = 0;
+    u32 fileSize = 0;
+    u32 bytesRead = 0;
 
     u8 *buffer = 0;
     i32 attempt;
@@ -278,12 +264,12 @@ u8 *win32_io_file_read(char *filename, u32 *file_size_out)
 }
 
 THRIVE_API u8 win32_io_file_write(
-    char *filename,
+    s8 *filename,
     u8 *buffer,
     u32 buffer_size)
 {
     void *hFile;
-    unsigned long bytes_written;
+    u32 bytes_written;
 
     hFile = CreateFileA(
         filename,
@@ -315,7 +301,7 @@ THRIVE_API i32 thrive_f64_to_string(
     u8 *buf,
     f64 value,
     i32 decimals, i32 width,
-    u8 pad_char)
+    u8 pad_s8)
 {
     u8 tmp[32];
     i32 p = 0, n = 0, neg = 0;
@@ -347,7 +333,7 @@ THRIVE_API i32 thrive_f64_to_string(
         whole += 1;
     }
 
-    /* convert integer part into tmp (reverse) */
+    /* convert i32eger part i32o tmp (reverse) */
     {
         i32 w = whole;
 
@@ -371,7 +357,7 @@ THRIVE_API i32 thrive_f64_to_string(
         /* left padding */
         while (pad_needed-- > 0)
         {
-            buf[p++] = pad_char;
+            buf[p++] = pad_s8;
         }
     }
 
@@ -381,7 +367,7 @@ THRIVE_API i32 thrive_f64_to_string(
         buf[p++] = '-';
     }
 
-    /* append integer part (reverse) */
+    /* append i32eger part (reverse) */
     while (n--)
     {
         buf[p++] = tmp[n];
@@ -411,9 +397,9 @@ THRIVE_API i32 thrive_f64_to_string(
     return p;
 }
 
-THRIVE_API void win32_io_print_ms(void *hConsole, u8 *name, u32 name_length, f64 ms, f64 ms_total)
+THRIVE_API void win32_io_pri32_ms(void *hConsole, u8 *name, u32 name_length, f64 ms, f64 ms_total)
 {
-    unsigned long written;
+    u32 written;
 
     u8 buf[128];
     u8 num[32];
@@ -523,9 +509,9 @@ typedef struct win32_thrive_metric
  * # Thrive Compilation
  * ############################################################################
  */
-THRIVE_API i32 thrive_compile(char *file_name, void *hConsole, LARGE_INTEGER *freq)
+THRIVE_API i32 thrive_compile(s8 *file_name, void *hConsole, LARGE_INTEGER *freq)
 {
-    unsigned long written = 0;
+    u32 written = 0;
     win32_thrive_metric metrics[METRIC_COUNT] = {0};
 
     u32 source_code_size = 0;
@@ -585,11 +571,11 @@ THRIVE_API i32 thrive_compile(char *file_name, void *hConsole, LARGE_INTEGER *fr
         for (i = 0; i < METRIC_COUNT; ++i)
         {
             u8 *metric_name = win32_thrive_metric_names[i];
-            win32_io_print_ms(hConsole, metric_name, thrive_string_length(metric_name), metric_times[i], metric_times_total);
+            win32_io_pri32_ms(hConsole, metric_name, thrive_string_length(metric_name), metric_times[i], metric_times_total);
         }
 
         /* Total time */
-        win32_io_print_ms(hConsole, (u8 *)"time_total        ", 18, metric_times_total, metric_times_total);
+        win32_io_pri32_ms(hConsole, (u8 *)"time_total        ", 18, metric_times_total, metric_times_total);
     }
 
     return 0;
@@ -604,9 +590,9 @@ THRIVE_API i32 thrive_compile(char *file_name, void *hConsole, LARGE_INTEGER *fr
  */
 THRIVE_API i32 start(i32 argc, u8 **argv)
 {
-    unsigned long written = 0;
+    u32 written = 0;
     void *hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
-    char *file_name;
+    s8 *file_name;
 
     LARGE_INTEGER freq;
 
@@ -616,11 +602,11 @@ THRIVE_API i32 start(i32 argc, u8 **argv)
     (void)conf_enable_optimized;
     (void)win32_io_file_write;
 
-    /* Print usage */
+    /* Pri32 usage */
     if (argc < 2)
     {
         WriteConsoleA(hConsole, "[thrive] usage  : ", 18, &written, 0);
-        WriteConsoleA(hConsole, argv[0], (unsigned long)thrive_string_length(argv[0]), &written, 0);
+        WriteConsoleA(hConsole, argv[0], (u32)thrive_string_length(argv[0]), &written, 0);
         WriteConsoleA(hConsole, " code.thrive <options>\n", 23, &written, 0);
         WriteConsoleA(hConsole, "[thrive] options:\n", 18, &written, 0);
         WriteConsoleA(hConsole, "[thrive]   --hot-reload  ; Enable hot reloading of source file\n", 63, &written, 0);
@@ -658,7 +644,7 @@ THRIVE_API i32 start(i32 argc, u8 **argv)
     /* Query the CPU Frequency once */
     QueryPerformanceFrequency(&freq);
 
-    file_name = (char *)argv[1];
+    file_name = (s8 *)argv[1];
 
     /* Compile , ... every time the source file changes */
     if (conf_enable_hot_reload)
@@ -735,7 +721,7 @@ THRIVE_API i32 win32_parse_command_line(u8 *cmdline, u8 ***argv_out)
 }
 
 /* ############################################################################
- * # Main entry point
+ * # Main entry poi32
  * ############################################################################
  */
 #ifdef __clang__
@@ -743,7 +729,7 @@ THRIVE_API i32 win32_parse_command_line(u8 *cmdline, u8 ***argv_out)
 __attribute((externally_visible))
 #endif
 #ifdef __i686__
-__attribute((force_align_arg_pointer))
+__attribute((force_align_arg_poi32er))
 #endif
 i32 mainCRTStartup(void)
 {
@@ -760,7 +746,7 @@ i32 mainCRTStartup(void)
    ------------------------------------------------------------------------------
    ALTERNATIVE A - MIT License
    Copyright (c) 2025 nickscha
-   Permission is hereby granted, free of charge, to any person obtaining a copy of
+   Permission is hereby granted, free of s8ge, to any person obtaining a copy of
    this software and associated documentation files (the "Software"), to deal in
    the Software without restriction, including without limitation the rights to
    use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
@@ -777,14 +763,14 @@ i32 mainCRTStartup(void)
    SOFTWARE.
    ------------------------------------------------------------------------------
    ALTERNATIVE B - Public Domain (www.unlicense.org)
-   This is free and unencumbered software released into the public domain.
+   This is free and unencumbered software released i32o the public domain.
    Anyone is free to copy, modify, publish, use, thrive_compile, sell, or distribute this
    software, either in source code form or as a thrive_compiled binary, for any purpose,
    commercial or non-commercial, and by any means.
    In jurisdictions that recognize copyright laws, the author or authors of this
-   software dedicate any and all copyright interest in the software to the public
+   software dedicate any and all copyright i32erest in the software to the public
    domain. We make this dedication for the benefit of the public at large and to
-   the detriment of our heirs and successors. We intend this dedication to be an
+   the detriment of our heirs and successors. We i32end this dedication to be an
    overt act of relinquishment in perpetuity of all present and future rights to
    this software under copyright law.
    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
