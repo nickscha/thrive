@@ -1,6 +1,7 @@
 /* thrive.h - v0.2 - public domain data structures - nickscha 2026
 
-A C89 standard compliant, nostdlib (no C Standard Library) Low Level Programming Language inbetween Assembly and C (THRIVE).
+A C89 standard compliant, nostdlib (no C Standard Library)
+Low Level Programming Language inbetween Assembly and C (THRIVE).
 
 LANGUAGE SPECIFICATON (WIP)
 
@@ -87,7 +88,7 @@ THRIVE_API THRIVE_INLINE u8 thrive_char_is_alpha(u8 c)
 
 THRIVE_API THRIVE_INLINE u8 thrive_char_is_whitespace(u8 c)
 {
-    return c == ' ' || c == '\r' || c == '\n' || c == '\t';
+    return c == ' ' || c == '\n' || c == '\r' || c == '\t';
 }
 
 THRIVE_API THRIVE_INLINE u32 thrive_string_length(u8 *str)
@@ -118,6 +119,21 @@ THRIVE_API THRIVE_INLINE u32 thrive_string_equals(u8 *a, u8 *b)
     return (*a == *b);
 }
 
+THRIVE_API THRIVE_INLINE u32 thrive_string_equals_limited(u8 *a, u8 *b, u32 len)
+{
+    u32 i;
+
+    for (i = 0; i < len; ++i)
+    {
+        if (a[i] != b[i])
+        {
+            return 0;
+        }
+    }
+
+    return 1;
+}
+
 /* #############################################################################
  * # [SECTION] Thrive Status
  * #############################################################################
@@ -127,8 +143,8 @@ typedef struct thrive_status
     enum type
     {
         THRIVE_STATUS_OK = 0,
-        THRIVE_STATUS_ERROR_ARGUMENTS, /* Internal arguments for function calls are wrong */
-        THRIVE_STATUS_ERROR_SYNTAX     /* Thrive Syntax error */
+        THRIVE_STATUS_ERROR_ARGUMENTS,
+        THRIVE_STATUS_ERROR_SYNTAX
 
     } type;
 
@@ -140,18 +156,140 @@ typedef struct thrive_status
  * # [SECTION] Lexer
  * #############################################################################
  */
+typedef enum thrive_token_kind
+{
+    THRIVE_TOKEN_KIND_EOF = 0,
+    THRIVE_TOKEN_KIND_LPARAN,
+    THRIVE_TOKEN_KIND_RPARAN,
+    THRIVE_TOKEN_KIND_ASSIGN,
+    THRIVE_TOKEN_KIND_ADD,
+    THRIVE_TOKEN_KIND_SUB,
+    THRIVE_TOKEN_KIND_MUL,
+    THRIVE_TOKEN_KIND_DIV,
+    THRIVE_TOKEN_KIND_INT,
+    THRIVE_TOKEN_KIND_NAME,
+    THRIVE_TOKEN_KIND_U32,
+    THRIVE_TOKEN_KIND_INVALID
+
+} thrive_token_kind;
+
+u8 *thrive_token_kind_names[] = {
+    (u8 *)"EOF",
+    (u8 *)"LPARAN",
+    (u8 *)"RPARAN",
+    (u8 *)"ASSIGN",
+    (u8 *)"ADD",
+    (u8 *)"SUB",
+    (u8 *)"MUL",
+    (u8 *)"DIV",
+    (u8 *)"INT",
+    (u8 *)"NAME",
+    (u8 *)"U32",
+    (u8 *)"INVALID"};
+
 typedef struct thrive_token
 {
 
-    u32 offset; /* Offset index of the source code */
-    u16 length; /* Length */
+    thrive_token_kind kind;
 
-    u16 line;
-    u8 column;
+    u8 *start;
+    u8 *end;
+
+    union value
+    {
+        u32 number;
+    } value;
 
 } thrive_token;
 
-THRIVE_API thrive_status thrive_lexer(u8 *source_code, u32 source_code_size)
+static u8 *stream;
+
+THRIVE_API THRIVE_INLINE thrive_token thrive_token_next(void)
+{
+    thrive_token token = {0};
+
+    token.start = stream;
+
+    /* clang-format off */
+    switch (*stream)
+    {   
+        /* Whitespaces */
+        case ' ': case '\n': case '\r': case '\t':
+        {
+            while (thrive_char_is_whitespace(*stream)) {
+                stream++;
+            }
+
+            return thrive_token_next();
+        } 
+        /* Number processing */
+        case '0': case '1': case '2': case '3': case '4': case '5': case '6':
+        case '7': case '8': case '9':
+        {
+            u32 value = 0;
+
+            while (thrive_char_is_digit(*stream)) {
+                value *= 10;
+                value += *stream++ - '0';
+            }
+
+            token.kind = THRIVE_TOKEN_KIND_INT;
+            token.value.number = value;
+
+            break;
+        }
+        /* Literal processing */
+        case 'a': case 'b': case 'c': case 'd': case 'e': case 'f': case 'g':
+        case 'h': case 'i': case 'j': case 'k': case 'l': case 'm': case 'n':
+        case 'o': case 'p': case 'q': case 'r': case 's': case 't': case 'u':
+        case 'v': case 'w': case 'x': case 'y': case 'z':
+        case 'A': case 'B': case 'C': case 'D': case 'E': case 'F': case 'G':
+        case 'H': case 'I': case 'J': case 'K': case 'L': case 'M': case 'N':
+        case 'O': case 'P': case 'Q': case 'R': case 'S': case 'T': case 'U':
+        case 'V': case 'W': case 'X': case 'Y': case 'Z':
+        case '_':
+        {
+            while (thrive_char_is_alpha(*stream) ||
+                   thrive_char_is_digit(*stream) ||
+                   *stream == '_') 
+            {
+                stream++;
+            }
+
+            token.kind = THRIVE_TOKEN_KIND_NAME;
+
+            if(thrive_string_equals_limited(
+                (u8*)"u32", 
+                token.start, 
+                (u32) (stream - token.start)
+            )) 
+            {
+                token.kind = THRIVE_TOKEN_KIND_U32;
+            }
+
+            break;
+        }
+        /* Single char tokens */
+        case '(':  { stream++; token.kind = THRIVE_TOKEN_KIND_LPARAN; break; }
+        case ')':  { stream++; token.kind = THRIVE_TOKEN_KIND_RPARAN; break; }
+        case '=':  { stream++; token.kind = THRIVE_TOKEN_KIND_ASSIGN; break; }
+        case '+':  { stream++; token.kind = THRIVE_TOKEN_KIND_ADD;    break; }
+        case '-':  { stream++; token.kind = THRIVE_TOKEN_KIND_SUB;    break; }
+        case '*':  { stream++; token.kind = THRIVE_TOKEN_KIND_MUL;    break; }
+        case '/':  { stream++; token.kind = THRIVE_TOKEN_KIND_DIV;    break; }
+        case '\0': { stream++; token.kind = THRIVE_TOKEN_KIND_EOF;    break; }
+        default:   { stream++; token.kind = THRIVE_TOKEN_KIND_INVALID;break; }
+    }
+    /* clang-format on */
+
+    token.end = stream;
+
+    return token;
+}
+
+THRIVE_API THRIVE_INLINE thrive_status thrive_lexer(
+    u8 *source_code,
+    u32 source_code_size)
 {
     thrive_status status = {0};
 
@@ -175,43 +313,43 @@ THRIVE_API thrive_status thrive_lexer(u8 *source_code, u32 source_code_size)
 #endif /* THRIVE_H */
 
 /*
-   ------------------------------------------------------------------------------
-   This software is available under 2 licenses -- choose whichever you prefer.
-   ------------------------------------------------------------------------------
-   ALTERNATIVE A - MIT License
-   Copyright (c) 2026 nickscha
-   Permission is hereby granted, free of charge, to any person obtaining a copy of
-   this software and associated documentation files (the "Software"), to deal in
-   the Software without restriction, including without limitation the rights to
-   use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
-   of the Software, and to permit persons to whom the Software is furnished to do
-   so, subject to the following conditions:
-   The above copyright notice and this permission notice shall be included in all
-   copies or substantial portions of the Software.
-   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-   OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-   SOFTWARE.
-   ------------------------------------------------------------------------------
-   ALTERNATIVE B - Public Domain (www.unlicense.org)
-   This is free and unencumbered software released into the public domain.
-   Anyone is free to copy, modify, publish, use, compile, sell, or distribute this
-   software, either in source code form or as a compiled binary, for any purpose,
-   commercial or non-commercial, and by any means.
-   In jurisdictions that recognize copyright laws, the author or authors of this
-   software dedicate any and all copyright interest in the software to the public
-   domain. We make this dedication for the benefit of the public at large and to
-   the detriment of our heirs and successors. We intend this dedication to be an
-   overt act of relinquishment in perpetuity of all present and future rights to
-   this software under copyright law.
-   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-   AUTHORS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
-   ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
-   WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-   ------------------------------------------------------------------------------
+ ------------------------------------------------------------------------------
+ This software is available under 2 licenses -- choose whichever you prefer.
+ ------------------------------------------------------------------------------
+ ALTERNATIVE A - MIT License
+ Copyright (c) 2026 nickscha
+ Permission is hereby granted, free of charge, to any person obtaining a copy of
+ this software and associated documentation files (the "Software"), to deal in
+ the Software without restriction, including without limitation the rights to
+ use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
+ of the Software, and to permit persons to whom the Software is furnished to do
+ so, subject to the following conditions:
+ The above copyright notice and this permission notice shall be included in all
+ copies or substantial portions of the Software.
+ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ SOFTWARE.
+ ------------------------------------------------------------------------------
+ ALTERNATIVE B - Public Domain (www.unlicense.org)
+ This is free and unencumbered software released into the public domain.
+ Anyone is free to copy, modify, publish, use, compile, sell, or distribute this
+ software, either in source code form or as a compiled binary, for any purpose,
+ commercial or non-commercial, and by any means.
+ In jurisdictions that recognize copyright laws, the author or authors of this
+ software dedicate any and all copyright interest in the software to the public
+ domain. We make this dedication for the benefit of the public at large and to
+ the detriment of our heirs and successors. We intend this dedication to be an
+ overt act of relinquishment in perpetuity of all present and future rights to
+ this software under copyright law.
+ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ AUTHORS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
+ ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ ------------------------------------------------------------------------------
 */
