@@ -168,7 +168,7 @@ typedef enum thrive_token_kind
     THRIVE_TOKEN_KIND_DIV,
     THRIVE_TOKEN_KIND_INT,
     THRIVE_TOKEN_KIND_NAME,
-    THRIVE_TOKEN_KIND_U32,
+    THRIVE_TOKEN_KIND_KEYWORD_U32,
     THRIVE_TOKEN_KIND_INVALID
 
 } thrive_token_kind;
@@ -184,7 +184,7 @@ u8 *thrive_token_kind_names[] = {
     (u8 *)"DIV",
     (u8 *)"INT",
     (u8 *)"NAME",
-    (u8 *)"U32",
+    (u8 *)"KW_U32",
     (u8 *)"INVALID"};
 
 typedef struct thrive_token
@@ -264,7 +264,7 @@ THRIVE_API THRIVE_INLINE thrive_token thrive_token_next(void)
                 (u32) (stream - token.start)
             )) 
             {
-                token.kind = THRIVE_TOKEN_KIND_U32;
+                token.kind = THRIVE_TOKEN_KIND_KEYWORD_U32;
             }
 
             break;
