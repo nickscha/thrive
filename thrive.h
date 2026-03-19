@@ -25,8 +25,8 @@ LANGUAGE SPECIFICATON (WIP)
   Keywords:
     - ret ; Return
     - ext ; External Function
-    - lds ; Load source
-    - ldb ; Load binary
+    - ldb ; Load binary file
+    - ldc ; Load code file
 
 LICENSE
 
@@ -168,6 +168,7 @@ typedef enum thrive_token_kind
     THRIVE_TOKEN_KIND_DIV,
     THRIVE_TOKEN_KIND_INT,
     THRIVE_TOKEN_KIND_NAME,
+    THRIVE_TOKEN_KIND_KEYWORD_RET,
     THRIVE_TOKEN_KIND_KEYWORD_U32,
     THRIVE_TOKEN_KIND_INVALID
 
@@ -184,6 +185,7 @@ u8 *thrive_token_kind_names[] = {
     (u8 *)"DIV",
     (u8 *)"INT",
     (u8 *)"NAME",
+    (u8 *)"KW_RET",
     (u8 *)"KW_U32",
     (u8 *)"INVALID"};
 
@@ -259,6 +261,13 @@ THRIVE_API THRIVE_INLINE thrive_token thrive_token_next(void)
             token.kind = THRIVE_TOKEN_KIND_NAME;
 
             if(thrive_string_equals_limited(
+                (u8*)"ret", 
+                token.start, 
+                (u32) (stream - token.start)
+            )) 
+            {
+                token.kind = THRIVE_TOKEN_KIND_KEYWORD_RET;
+            } else if (thrive_string_equals_limited(
                 (u8*)"u32", 
                 token.start, 
                 (u32) (stream - token.start)

@@ -32,7 +32,10 @@ void print_token(thrive_token token)
 
 int main(void)
 {
-    u8 *source_code = "u32 a = (400 * 2);\n";
+    u8 *source_code =
+        "u32 a = (400 * 2)\n"
+        "ret a\n";
+
     u32 source_code_size = thrive_string_length(source_code);
 
     thrive_status status = {0};
