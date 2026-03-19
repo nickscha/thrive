@@ -76,22 +76,22 @@ THRIVE_STATIC_ASSERT(sizeof(f64) == 8, f64_size_must_be_8);
  * # [SECTION] Helper Functions
  * #############################################################################
  */
-THRIVE_API THRIVE_INLINE u8 thrive_char_is_digit(u8 c)
+THRIVE_API THRIVE_INLINE s8 thrive_char_is_digit(s8 c)
 {
     return c >= '0' && c <= '9';
 }
 
-THRIVE_API THRIVE_INLINE u8 thrive_char_is_alpha(u8 c)
+THRIVE_API THRIVE_INLINE s8 thrive_char_is_alpha(s8 c)
 {
     return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
 }
 
-THRIVE_API THRIVE_INLINE u8 thrive_char_is_whitespace(u8 c)
+THRIVE_API THRIVE_INLINE s8 thrive_char_is_whitespace(s8 c)
 {
     return c == ' ' || c == '\n' || c == '\r' || c == '\t';
 }
 
-THRIVE_API THRIVE_INLINE u32 thrive_string_length(u8 *str)
+THRIVE_API THRIVE_INLINE u32 thrive_string_length(s8 *str)
 {
     u32 len = 0;
 
@@ -103,7 +103,7 @@ THRIVE_API THRIVE_INLINE u32 thrive_string_length(u8 *str)
     return len;
 }
 
-THRIVE_API THRIVE_INLINE u32 thrive_string_equals(u8 *a, u8 *b)
+THRIVE_API THRIVE_INLINE u32 thrive_string_equals(s8 *a, s8 *b)
 {
     while (*a && *b)
     {
@@ -119,7 +119,7 @@ THRIVE_API THRIVE_INLINE u32 thrive_string_equals(u8 *a, u8 *b)
     return (*a == *b);
 }
 
-THRIVE_API THRIVE_INLINE u32 thrive_string_equals_limited(u8 *a, u8 *b, u32 len)
+THRIVE_API THRIVE_INLINE u32 thrive_string_equals_length(s8 *a, s8 *b, u32 len)
 {
     u32 i;
 
@@ -148,7 +148,7 @@ typedef struct thrive_status
 
     } type;
 
-    u8 *message;
+    s8 *message;
 
 } thrive_status;
 
@@ -174,28 +174,28 @@ typedef enum thrive_token_kind
 
 } thrive_token_kind;
 
-u8 *thrive_token_kind_names[] = {
-    (u8 *)"EOF",
-    (u8 *)"LPARAN",
-    (u8 *)"RPARAN",
-    (u8 *)"ASSIGN",
-    (u8 *)"ADD",
-    (u8 *)"SUB",
-    (u8 *)"MUL",
-    (u8 *)"DIV",
-    (u8 *)"INT",
-    (u8 *)"NAME",
-    (u8 *)"KW_RET",
-    (u8 *)"KW_U32",
-    (u8 *)"INVALID"};
+s8 *thrive_token_kind_names[] = {
+    "EOF",
+    "LPARAN",
+    "RPARAN",
+    "ASSIGN",
+    "ADD",
+    "SUB",
+    "MUL",
+    "DIV",
+    "INT",
+    "NAME",
+    "KW_RET",
+    "KW_U32",
+    "INVALID"};
 
 typedef struct thrive_token
 {
 
     thrive_token_kind kind;
 
-    u8 *start;
-    u8 *end;
+    s8 *start;
+    s8 *end;
 
     union value
     {
@@ -204,7 +204,7 @@ typedef struct thrive_token
 
 } thrive_token;
 
-static u8 *stream;
+static s8 *stream;
 
 THRIVE_API THRIVE_INLINE thrive_token thrive_token_next(void)
 {
@@ -232,7 +232,7 @@ THRIVE_API THRIVE_INLINE thrive_token thrive_token_next(void)
 
             while (thrive_char_is_digit(*stream)) {
                 value *= 10;
-                value += *stream++ - '0';
+                value += (u32) (*stream++ - '0');
             }
 
             token.kind = THRIVE_TOKEN_KIND_INT;
@@ -260,20 +260,17 @@ THRIVE_API THRIVE_INLINE thrive_token thrive_token_next(void)
 
             token.kind = THRIVE_TOKEN_KIND_NAME;
 
-            if(thrive_string_equals_limited(
-                (u8*)"ret", 
-                token.start, 
-                (u32) (stream - token.start)
-            )) 
             {
-                token.kind = THRIVE_TOKEN_KIND_KEYWORD_RET;
-            } else if (thrive_string_equals_limited(
-                (u8*)"u32", 
-                token.start, 
-                (u32) (stream - token.start)
-            )) 
-            {
-                token.kind = THRIVE_TOKEN_KIND_KEYWORD_U32;
+                u32 token_length = (u32) (stream - token.start);
+
+                if (thrive_string_equals_length("ret", token.start, token_length)) 
+                {
+                    token.kind = THRIVE_TOKEN_KIND_KEYWORD_RET;
+                } 
+                else if (thrive_string_equals_length("u32", token.start, token_length)) 
+                {
+                    token.kind = THRIVE_TOKEN_KIND_KEYWORD_U32;
+                }
             }
 
             break;
@@ -297,7 +294,7 @@ THRIVE_API THRIVE_INLINE thrive_token thrive_token_next(void)
 }
 
 THRIVE_API THRIVE_INLINE thrive_status thrive_lexer(
-    u8 *source_code,
+    s8 *source_code,
     u32 source_code_size)
 {
     thrive_status status = {0};
@@ -305,14 +302,14 @@ THRIVE_API THRIVE_INLINE thrive_status thrive_lexer(
     if (!source_code)
     {
         status.type = THRIVE_STATUS_ERROR_ARGUMENTS;
-        status.message = (u8 *)"No valid source code has been provided!\n";
+        status.message = "No valid source code has been provided!\n";
         return status;
     }
 
     if (source_code_size < 1)
     {
         status.type = THRIVE_STATUS_ERROR_ARGUMENTS;
-        status.message = (u8 *)"Source code is empty!\n";
+        status.message = "Source code is empty!\n";
         return status;
     }
 

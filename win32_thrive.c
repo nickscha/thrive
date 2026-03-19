@@ -174,13 +174,13 @@ THRIVE_API THRIVE_INLINE FILETIME win32_io_file_mod_time(s8 *file)
     return GetFileAttributesExA(file, GetFileExInfoStandard, &fad) ? fad.ftLastWriteTime : empty;
 }
 
-u8 *win32_io_file_read(s8 *filename, u32 *file_size_out)
+s8 *win32_io_file_read(s8 *filename, u32 *file_size_out)
 {
     void *hFile = INVALID_HANDLE;
     u32 fileSize = 0;
     u32 bytesRead = 0;
 
-    u8 *buffer = 0;
+    s8 *buffer = 0;
     i32 attempt;
 
     /* Retry loop for hot-reload: file might be locked or partially written */
@@ -219,7 +219,7 @@ u8 *win32_io_file_read(s8 *filename, u32 *file_size_out)
     if (fileSize <= FILE_MMAP_THRESHOLD)
     {
         /* Small file: read normally */
-        buffer = (u8 *)VirtualAlloc((void *)0, fileSize + 1, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+        buffer = (s8 *)VirtualAlloc((void *)0, fileSize + 1, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
 
         if (!buffer)
         {
@@ -247,7 +247,7 @@ u8 *win32_io_file_read(s8 *filename, u32 *file_size_out)
             return (void *)0;
         }
 
-        buffer = (u8 *)MapViewOfFile(hMap, FILE_MAP_READ, 0, 0, 0);
+        buffer = (s8 *)MapViewOfFile(hMap, FILE_MAP_READ, 0, 0, 0);
 
         CloseHandle(hMap);
 
@@ -298,12 +298,12 @@ THRIVE_API u8 win32_io_file_write(
 }
 
 THRIVE_API i32 thrive_f64_to_string(
-    u8 *buf,
+    s8 *buf,
     f64 value,
     i32 decimals, i32 width,
-    u8 pad_s8)
+    s8 pad_s8)
 {
-    u8 tmp[32];
+    s8 tmp[32];
     i32 p = 0, n = 0, neg = 0;
     i32 whole, frac, pow = 1;
     f64 x;
@@ -344,7 +344,7 @@ THRIVE_API i32 thrive_f64_to_string(
 
         while (w > 0)
         {
-            tmp[n++] = (u8)('0' + (w % 10));
+            tmp[n++] = (s8)('0' + (w % 10));
             w /= 10;
         }
     }
@@ -382,7 +382,7 @@ THRIVE_API i32 thrive_f64_to_string(
         {
             i32 d = (i32)((frac / pow) % 10);
 
-            buf[p++] = (u8)('0' + d);
+            buf[p++] = (s8)('0' + d);
             pow /= 10;
 
             if (i == 0)
@@ -397,13 +397,13 @@ THRIVE_API i32 thrive_f64_to_string(
     return p;
 }
 
-THRIVE_API void win32_io_pri32_ms(void *hConsole, u8 *name, u32 name_length, f64 ms, f64 ms_total)
+THRIVE_API void win32_io_pri32_ms(void *hConsole, s8 *name, u32 name_length, f64 ms, f64 ms_total)
 {
     u32 written;
 
-    u8 buf[128];
-    u8 num[32];
-    u8 *p = buf;
+    s8 buf[128];
+    s8 num[32];
+    s8 *p = buf;
     u32 i;
     f64 ms_mid = 0.02;
     f64 ms_high = 0.75;
@@ -494,9 +494,9 @@ typedef enum win32_thrive_metrics
 } win32_thrive_metrics;
 
 /* Has to match with enum structure */
-static u8 *win32_thrive_metric_names[] = {
-    (u8 *)"time_io_file_read ",
-    (u8 *)"time_compilation  "};
+static s8 *win32_thrive_metric_names[] = {
+    "time_io_file_read ",
+    "time_compilation  "};
 
 typedef struct win32_thrive_metric
 {
@@ -515,7 +515,7 @@ THRIVE_API i32 thrive_compile(s8 *file_name, void *hConsole, LARGE_INTEGER *freq
     win32_thrive_metric metrics[METRIC_COUNT] = {0};
 
     u32 source_code_size = 0;
-    u8 *source_code;
+    s8 *source_code;
 
     /* Read entire file */
     QueryPerformanceCounter(&metrics[METRIC_IO_FILE_READ].time_start);
@@ -570,12 +570,12 @@ THRIVE_API i32 thrive_compile(s8 *file_name, void *hConsole, LARGE_INTEGER *freq
         /* Metric time */
         for (i = 0; i < METRIC_COUNT; ++i)
         {
-            u8 *metric_name = win32_thrive_metric_names[i];
+            s8 *metric_name = win32_thrive_metric_names[i];
             win32_io_pri32_ms(hConsole, metric_name, thrive_string_length(metric_name), metric_times[i], metric_times_total);
         }
 
         /* Total time */
-        win32_io_pri32_ms(hConsole, (u8 *)"time_total        ", 18, metric_times_total, metric_times_total);
+        win32_io_pri32_ms(hConsole, "time_total        ", 18, metric_times_total, metric_times_total);
     }
 
     return 0;
@@ -588,7 +588,7 @@ THRIVE_API i32 thrive_compile(s8 *file_name, void *hConsole, LARGE_INTEGER *freq
  * The "mainCRTStartup" will read the command line arguments parsed and call
  * this function.
  */
-THRIVE_API i32 start(i32 argc, u8 **argv)
+THRIVE_API i32 start(i32 argc, s8 **argv)
 {
     u32 written = 0;
     void *hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
@@ -621,11 +621,11 @@ THRIVE_API i32 start(i32 argc, u8 **argv)
 
         for (i = 2; i < argc; ++i)
         {
-            if (thrive_string_equals(argv[i], (u8 *)"--hot-reload"))
+            if (thrive_string_equals(argv[i], "--hot-reload"))
             {
                 conf_enable_hot_reload = 1;
             }
-            else if (thrive_string_equals(argv[i], (u8 *)"--optimized"))
+            else if (thrive_string_equals(argv[i], "--optimized"))
             {
                 conf_enable_optimized = 1;
             }
@@ -679,9 +679,9 @@ THRIVE_API i32 start(i32 argc, u8 **argv)
  * Converts "program.exe arg1 arg2" -> argc=3, argv={"program.exe","arg1","arg2",NULL}
  * In-place: modifies the command line buffer.
  */
-THRIVE_API i32 win32_parse_command_line(u8 *cmdline, u8 ***argv_out)
+THRIVE_API i32 win32_parse_command_line(s8 *cmdline, s8 ***argv_out)
 {
-    static u8 *argv_local[64]; /* up to 63 args */
+    static s8 *argv_local[64]; /* up to 63 args */
     i32 argc = 0;
 
     while (*cmdline)
@@ -714,7 +714,7 @@ THRIVE_API i32 win32_parse_command_line(u8 *cmdline, u8 ***argv_out)
         }
     }
 
-    argv_local[argc] = (u8 *)0;
+    argv_local[argc] = (s8 *)0;
     *argv_out = argv_local;
 
     return argc;
@@ -733,8 +733,8 @@ __attribute((force_align_arg_poi32er))
 #endif
 i32 mainCRTStartup(void)
 {
-    u8 *cmdline = (u8 *)GetCommandLineA();
-    u8 **argv;
+    s8 *cmdline = GetCommandLineA();
+    s8 **argv;
     i32 argc = win32_parse_command_line(cmdline, &argv);
 
     return start(argc, argv);
