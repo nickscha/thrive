@@ -18,6 +18,9 @@ void print_token(thrive_token token)
     case THRIVE_TOKEN_KIND_EOF:
         printf("%-10s\n", "EOF");
         break;
+    case THRIVE_TOKEN_KIND_NEW_LINE:
+        printf("%-10s\n", "NEWLINE");
+        break;
     case THRIVE_TOKEN_KIND_INT:
         printf("%-10s| %d\n", "INT", token.value.number);
         break;

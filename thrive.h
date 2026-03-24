@@ -86,11 +86,6 @@ THRIVE_API THRIVE_INLINE s8 thrive_char_is_alpha(s8 c)
     return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
 }
 
-THRIVE_API THRIVE_INLINE s8 thrive_char_is_whitespace(s8 c)
-{
-    return c == ' ' || c == '\n' || c == '\r' || c == '\t';
-}
-
 THRIVE_API THRIVE_INLINE u32 thrive_string_length(s8 *str)
 {
     u32 len = 0;
@@ -159,6 +154,7 @@ typedef struct thrive_status
 typedef enum thrive_token_kind
 {
     THRIVE_TOKEN_KIND_EOF = 0,
+    THRIVE_TOKEN_KIND_NEW_LINE,
     THRIVE_TOKEN_KIND_LPARAN,
     THRIVE_TOKEN_KIND_RPARAN,
     THRIVE_TOKEN_KIND_ASSIGN,
@@ -174,8 +170,9 @@ typedef enum thrive_token_kind
 
 } thrive_token_kind;
 
-s8 *thrive_token_kind_names[] = {
+static s8 *thrive_token_kind_names[] = {
     "EOF",
+    "NEWLINE",
     "LPARAN",
     "RPARAN",
     "ASSIGN",
@@ -216,9 +213,9 @@ THRIVE_API THRIVE_INLINE thrive_token thrive_token_next(void)
     switch (*stream)
     {   
         /* Whitespaces */
-        case ' ': case '\n': case '\r': case '\t':
+        case ' ': case '\r': case '\t':
         {
-            while (thrive_char_is_whitespace(*stream)) {
+            while (*stream == ' ' || *stream == '\r' || *stream == '\t') {
                 stream++;
             }
 
@@ -276,15 +273,16 @@ THRIVE_API THRIVE_INLINE thrive_token thrive_token_next(void)
             break;
         }
         /* Single char tokens */
-        case '(':  { stream++; token.kind = THRIVE_TOKEN_KIND_LPARAN; break; }
-        case ')':  { stream++; token.kind = THRIVE_TOKEN_KIND_RPARAN; break; }
-        case '=':  { stream++; token.kind = THRIVE_TOKEN_KIND_ASSIGN; break; }
-        case '+':  { stream++; token.kind = THRIVE_TOKEN_KIND_ADD;    break; }
-        case '-':  { stream++; token.kind = THRIVE_TOKEN_KIND_SUB;    break; }
-        case '*':  { stream++; token.kind = THRIVE_TOKEN_KIND_MUL;    break; }
-        case '/':  { stream++; token.kind = THRIVE_TOKEN_KIND_DIV;    break; }
-        case '\0': { stream++; token.kind = THRIVE_TOKEN_KIND_EOF;    break; }
-        default:   { stream++; token.kind = THRIVE_TOKEN_KIND_INVALID;break; }
+        case '(':  { stream++; token.kind = THRIVE_TOKEN_KIND_LPARAN;   break; }
+        case ')':  { stream++; token.kind = THRIVE_TOKEN_KIND_RPARAN;   break; }
+        case '=':  { stream++; token.kind = THRIVE_TOKEN_KIND_ASSIGN;   break; }
+        case '+':  { stream++; token.kind = THRIVE_TOKEN_KIND_ADD;      break; }
+        case '-':  { stream++; token.kind = THRIVE_TOKEN_KIND_SUB;      break; }
+        case '*':  { stream++; token.kind = THRIVE_TOKEN_KIND_MUL;      break; }
+        case '/':  { stream++; token.kind = THRIVE_TOKEN_KIND_DIV;      break; }
+        case '\0': { stream++; token.kind = THRIVE_TOKEN_KIND_EOF;      break; }
+        case '\n': { stream++; token.kind = THRIVE_TOKEN_KIND_NEW_LINE; break; }
+        default:   { stream++; token.kind = THRIVE_TOKEN_KIND_INVALID;  break; }
     }
     /* clang-format on */
 
