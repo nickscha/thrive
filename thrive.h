@@ -170,7 +170,7 @@ typedef enum thrive_token_kind
 
 } thrive_token_kind;
 
-static s8 *thrive_token_kind_names[] = {
+s8 *thrive_token_kind_names[] = {
     "EOF",
     "NEWLINE",
     "LPARAN",
