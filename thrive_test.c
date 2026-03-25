@@ -317,6 +317,16 @@ int main(void)
             "u32 a = 20 * (400 + 2) ;another comment 1 * 2\n"
             "ret a\n";
 
+        /*
+        s8 *s2 =
+            "; this is a line comment          \n"
+            "u32 a   = 42                      \n"
+            "u32 b   = 27                      \n"
+            "u32 c   = 1                       \n"
+            "u32 res = a * c + b * 10 * (2 + 4)\n"
+            "ret res                           \n";
+        */
+
         s.source_code = s2;
         s.source_code_size = thrive_string_length(s2);
 
