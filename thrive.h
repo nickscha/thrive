@@ -206,9 +206,15 @@ THRIVE_API THRIVE_INLINE void thrive_token_next(thrive_state *state)
     switch (*state->source_code)
     {   
         /* Whitespaces */
-        case ' ': case '\r': case '\t':
+        case ' ': case '\r': case '\t': case '\v': case '\f': case '\a':
         {
-            while (*state->source_code == ' ' || *state->source_code == '\r' || *state->source_code == '\t') {
+            while (*state->source_code == ' '  || 
+                   *state->source_code == '\r' || 
+                   *state->source_code == '\t' ||
+                   *state->source_code == '\v' ||
+                   *state->source_code == '\f' ||
+                   *state->source_code == '\a'
+            ) {
                 state->source_code++;
             }
 
