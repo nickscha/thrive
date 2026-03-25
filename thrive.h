@@ -206,6 +206,8 @@ typedef struct thrive_state
     s8 *source_code;
     u32 source_code_size;
 
+    thrive_token current;
+
 } thrive_state;
 
 THRIVE_API THRIVE_INLINE thrive_token thrive_token_next(thrive_state *state)
@@ -294,6 +296,304 @@ THRIVE_API THRIVE_INLINE thrive_token thrive_token_next(thrive_state *state)
     token.end = state->source_code;
 
     return token;
+}
+
+THRIVE_API void thrive_next(thrive_state *s)
+{
+    s->current = thrive_token_next(s);
+}
+
+THRIVE_API s8 thrive_accept(thrive_state *s, thrive_token_kind kind)
+{
+    if (s->current.kind == kind)
+    {
+        thrive_next(s);
+        return 1;
+    }
+    return 0;
+}
+
+THRIVE_API void thrive_expect(thrive_state *s, thrive_token_kind kind)
+{
+    if (s->current.kind != kind)
+    {
+        /* TODO: error handling */
+    }
+    thrive_next(s);
+}
+
+THRIVE_API void thrive_skip_newlines(thrive_state *s)
+{
+    while (s->current.kind == THRIVE_TOKEN_KIND_NEW_LINE)
+    {
+        thrive_next(s);
+    }
+}
+
+typedef enum thrive_ast_kind
+{
+    THRIVE_AST_INT,
+    THRIVE_AST_NAME,
+    THRIVE_AST_BINARY,
+    THRIVE_AST_RETURN,
+    THRIVE_AST_ASSIGN,
+    THRIVE_AST_DECL,
+    THRIVE_AST_BLOCK
+
+} thrive_ast_kind;
+
+typedef struct thrive_ast thrive_ast;
+
+#define THRIVE_BLOCK_MAX 256
+
+typedef struct thrive_ast_block
+{
+    thrive_ast *items[THRIVE_BLOCK_MAX];
+    u32 count;
+} thrive_ast_block;
+
+struct thrive_ast
+{
+    thrive_ast_kind kind;
+
+    union
+    {
+        u32 int_value;
+
+        struct
+        {
+            s8 *start;
+            u32 length;
+        } name;
+
+        struct
+        {
+            thrive_token_kind op;
+            thrive_ast *left;
+            thrive_ast *right;
+        } binary;
+
+        struct
+        {
+            thrive_ast *expr;
+        } ret;
+
+        struct
+        {
+            thrive_ast *left;
+            thrive_ast *right;
+        } assign;
+
+        struct
+        {
+            thrive_ast *name;
+            thrive_ast *value;
+        } decl;
+
+        thrive_ast_block block;
+
+    } data;
+};
+
+#define THRIVE_AST_MAX 1024
+
+static thrive_ast thrive_ast_pool[THRIVE_AST_MAX];
+static u32 thrive_ast_count = 0;
+
+THRIVE_API thrive_ast *thrive_ast_new(void)
+{
+    if (thrive_ast_count >= THRIVE_AST_MAX)
+    {
+        /* TODO: handle overflow properly */
+        return 0;
+    }
+
+    return &thrive_ast_pool[thrive_ast_count++];
+}
+
+thrive_ast *parse_expr(thrive_state *s);
+
+thrive_ast *parse_primary(thrive_state *s)
+{
+    thrive_token tok = s->current;
+
+    if (tok.kind == THRIVE_TOKEN_KIND_INT)
+    {
+        thrive_ast *node = thrive_ast_new();
+        node->kind = THRIVE_AST_INT;
+        node->data.int_value = tok.value.number;
+
+        thrive_next(s);
+        return node;
+    }
+
+    if (tok.kind == THRIVE_TOKEN_KIND_NAME)
+    {
+        thrive_ast *node = thrive_ast_new();
+        node->kind = THRIVE_AST_NAME;
+        node->data.name.start = tok.start;
+        node->data.name.length = tok.end - tok.start;
+
+        thrive_next(s);
+        return node;
+    }
+
+    if (thrive_accept(s, THRIVE_TOKEN_KIND_LPARAN))
+    {
+        thrive_ast *expr = parse_expr(s);
+        thrive_expect(s, THRIVE_TOKEN_KIND_RPARAN);
+        return expr;
+    }
+
+    return 0; /* error */
+}
+
+thrive_ast *parse_mul(thrive_state *s)
+{
+    thrive_ast *left = parse_primary(s);
+
+    while (s->current.kind == THRIVE_TOKEN_KIND_MUL ||
+           s->current.kind == THRIVE_TOKEN_KIND_DIV)
+    {
+        thrive_token_kind op = s->current.kind;
+        thrive_next(s);
+
+        thrive_ast *right = parse_primary(s);
+
+        thrive_ast *node = thrive_ast_new();
+        node->kind = THRIVE_AST_BINARY;
+        node->data.binary.op = op;
+        node->data.binary.left = left;
+        node->data.binary.right = right;
+
+        left = node;
+    }
+
+    return left;
+}
+
+thrive_ast *parse_add(thrive_state *s)
+{
+    thrive_ast *left = parse_mul(s);
+
+    while (s->current.kind == THRIVE_TOKEN_KIND_ADD ||
+           s->current.kind == THRIVE_TOKEN_KIND_SUB)
+    {
+        thrive_token_kind op = s->current.kind;
+        thrive_next(s);
+
+        thrive_ast *right = parse_mul(s);
+
+        thrive_ast *node = thrive_ast_new();
+        node->kind = THRIVE_AST_BINARY;
+        node->data.binary.op = op;
+        node->data.binary.left = left;
+        node->data.binary.right = right;
+
+        left = node;
+    }
+
+    return left;
+}
+
+thrive_ast *parse_assign(thrive_state *s)
+{
+    thrive_ast *left = parse_add(s);
+
+    if (s->current.kind == THRIVE_TOKEN_KIND_ASSIGN)
+    {
+        thrive_next(s);
+
+        thrive_ast *right = parse_assign(s); /* right-associative */
+
+        thrive_ast *node = thrive_ast_new();
+        node->kind = THRIVE_AST_ASSIGN;
+        node->data.assign.left = left;
+        node->data.assign.right = right;
+
+        return node;
+    }
+
+    return left;
+}
+
+thrive_ast *parse_expr(thrive_state *s)
+{
+    return parse_assign(s);
+}
+
+thrive_ast *parse_statement(thrive_state *s)
+{
+    /* return */
+    if (thrive_accept(s, THRIVE_TOKEN_KIND_KEYWORD_RET))
+    {
+        thrive_ast *node = thrive_ast_new();
+        node->kind = THRIVE_AST_RETURN;
+        node->data.ret.expr = parse_expr(s);
+        return node;
+    }
+
+    /* declaration: u32 a = expr */
+    if (thrive_accept(s, THRIVE_TOKEN_KIND_KEYWORD_U32))
+    {
+        thrive_token name_tok = s->current;
+
+        thrive_expect(s, THRIVE_TOKEN_KIND_NAME);
+
+        thrive_ast *name = thrive_ast_new();
+        name->kind = THRIVE_AST_NAME;
+        name->data.name.start = name_tok.start;
+        name->data.name.length = name_tok.end - name_tok.start;
+
+        thrive_ast *value = 0;
+
+        if (thrive_accept(s, THRIVE_TOKEN_KIND_ASSIGN))
+        {
+            value = parse_expr(s);
+        }
+
+        thrive_ast *node = thrive_ast_new();
+        node->kind = THRIVE_AST_DECL;
+        node->data.decl.name = name;
+        node->data.decl.value = value;
+
+        return node;
+    }
+
+    return parse_expr(s);
+}
+
+thrive_ast *parse_program(thrive_state *s)
+{
+    thrive_ast *node = thrive_ast_new();
+    node->kind = THRIVE_AST_BLOCK;
+    node->data.block.count = 0;
+
+    thrive_next(s);
+    thrive_skip_newlines(s);
+
+    while (s->current.kind != THRIVE_TOKEN_KIND_EOF)
+    {
+        if (node->data.block.count >= THRIVE_BLOCK_MAX)
+        {
+            /* TODO: overflow */
+            break;
+        }
+
+        thrive_ast *stmt = parse_statement(s);
+
+        node->data.block.items[node->data.block.count++] = stmt;
+
+        thrive_skip_newlines(s);
+    }
+
+    return node;
+}
+
+thrive_ast *parse(thrive_state *s)
+{
+    thrive_ast_count = 0;
+    return parse_program(s);
 }
 
 THRIVE_API THRIVE_INLINE thrive_status thrive_lexer(
