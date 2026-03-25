@@ -542,7 +542,7 @@ THRIVE_API i32 thrive_compile(s8 *file_name, void *hConsole, LARGE_INTEGER *freq
         thrive_status status = {0};
 
         QueryPerformanceCounter(&metrics[METRIC_COMPILATION].time_start);
-        status = thrive_lexer(source_code, source_code_size);
+        /*status = thrive_lexer(source_code, source_code_size);*/
         QueryPerformanceCounter(&metrics[METRIC_COMPILATION].time_end);
 
         if (status.type != THRIVE_STATUS_OK)
