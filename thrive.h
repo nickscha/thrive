@@ -179,6 +179,9 @@ typedef struct thrive_token
     s8 *start;
     s8 *end;
 
+    u32 line;
+    u32 column;
+
     union value
     {
         u32 number;
@@ -194,6 +197,9 @@ typedef struct thrive_state
     thrive_token current;
     thrive_status status;
 
+    u32 line;   /* current line number, start at 1 */
+    u32 column; /* current column, start at 1 */
+
 } thrive_state;
 
 THRIVE_API THRIVE_INLINE void thrive_token_next(thrive_state *state)
@@ -201,6 +207,8 @@ THRIVE_API THRIVE_INLINE void thrive_token_next(thrive_state *state)
     thrive_token token = {0};
 
     token.start = state->source_code;
+    token.line = state->line;
+    token.column = state->column;
 
     /* clang-format off */
     switch (*state->source_code)
@@ -216,6 +224,7 @@ THRIVE_API THRIVE_INLINE void thrive_token_next(thrive_state *state)
                    *state->source_code == '\a'
             ) {
                 state->source_code++;
+                state->column++;
             }
 
             thrive_token_next(state);
@@ -226,6 +235,7 @@ THRIVE_API THRIVE_INLINE void thrive_token_next(thrive_state *state)
         {
             while (*state->source_code && *state->source_code != '\n') {
                 state->source_code++;
+                state->column++;
             }
             
             thrive_token_next(state);
@@ -240,6 +250,7 @@ THRIVE_API THRIVE_INLINE void thrive_token_next(thrive_state *state)
             while (thrive_char_is_digit(*state->source_code)) {
                 value *= 10;
                 value += (u32) (*state->source_code++ - '0');
+                state->column++;
             }
 
             token.kind = THRIVE_TOKEN_KIND_INT;
@@ -263,6 +274,7 @@ THRIVE_API THRIVE_INLINE void thrive_token_next(thrive_state *state)
                    *state->source_code == '_') 
             {
                 state->source_code++;
+                state->column++;
             }
 
             token.kind = THRIVE_TOKEN_KIND_NAME;
@@ -282,17 +294,25 @@ THRIVE_API THRIVE_INLINE void thrive_token_next(thrive_state *state)
 
             break;
         }
+        /* New Line handling */
+        case '\n': 
+        { 
+            state->source_code++; 
+            state->line++;
+            state->column = 1; 
+            token.kind = THRIVE_TOKEN_KIND_NEW_LINE; 
+            break; 
+        }
         /* Single char tokens */
-        case '(':  { state->source_code++; token.kind = THRIVE_TOKEN_KIND_LPARAN;   break; }
-        case ')':  { state->source_code++; token.kind = THRIVE_TOKEN_KIND_RPARAN;   break; }
-        case '=':  { state->source_code++; token.kind = THRIVE_TOKEN_KIND_ASSIGN;   break; }
-        case '+':  { state->source_code++; token.kind = THRIVE_TOKEN_KIND_ADD;      break; }
-        case '-':  { state->source_code++; token.kind = THRIVE_TOKEN_KIND_SUB;      break; }
-        case '*':  { state->source_code++; token.kind = THRIVE_TOKEN_KIND_MUL;      break; }
-        case '/':  { state->source_code++; token.kind = THRIVE_TOKEN_KIND_DIV;      break; }
-        case '\0': { state->source_code++; token.kind = THRIVE_TOKEN_KIND_EOF;      break; }
-        case '\n': { state->source_code++; token.kind = THRIVE_TOKEN_KIND_NEW_LINE; break; }
-        default:   { state->source_code++; token.kind = THRIVE_TOKEN_KIND_INVALID;  break; }
+        case '(':  { state->source_code++; state->column++; token.kind = THRIVE_TOKEN_KIND_LPARAN;   break; }
+        case ')':  { state->source_code++; state->column++; token.kind = THRIVE_TOKEN_KIND_RPARAN;   break; }
+        case '=':  { state->source_code++; state->column++; token.kind = THRIVE_TOKEN_KIND_ASSIGN;   break; }
+        case '+':  { state->source_code++; state->column++; token.kind = THRIVE_TOKEN_KIND_ADD;      break; }
+        case '-':  { state->source_code++; state->column++; token.kind = THRIVE_TOKEN_KIND_SUB;      break; }
+        case '*':  { state->source_code++; state->column++; token.kind = THRIVE_TOKEN_KIND_MUL;      break; }
+        case '/':  { state->source_code++; state->column++; token.kind = THRIVE_TOKEN_KIND_DIV;      break; }
+        case '\0': { state->source_code++; state->column++; token.kind = THRIVE_TOKEN_KIND_EOF;      break; }
+        default:   { state->source_code++; state->column++; token.kind = THRIVE_TOKEN_KIND_INVALID;  break; }
     }
     /* clang-format on */
 

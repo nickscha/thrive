@@ -188,21 +188,25 @@ void print_token(thrive_token token)
         printf("[UNKOWN]  %.*s [kind: %d]\n", token.end - token.start, token.start, token.kind);
     }
 
+    printf("[%3d:%3d] ", token.line, token.column);
+
     switch (token.kind)
     {
     case THRIVE_TOKEN_KIND_EOF:
-        printf("%-10s\n", "EOF");
+        printf("%-10s", "EOF");
         break;
     case THRIVE_TOKEN_KIND_NEW_LINE:
-        printf("%-10s\n", "NEWLINE");
+        printf("%-10s", "NEWLINE");
         break;
     case THRIVE_TOKEN_KIND_INT:
-        printf("%-10s| %d\n", "INT", token.value.number);
+        printf("%-10s| %d", "INT", token.value.number);
         break;
     default:
-        printf("%-10s| %.*s\n", thrive_token_kind_names[token.kind], token.end - token.start, token.start);
+        printf("%-10s| %.*s", thrive_token_kind_names[token.kind], token.end - token.start, token.start);
         break;
     }
+
+    printf("\n");
 }
 
 THRIVE_API void thrive_print_indent(u32 depth)
@@ -286,7 +290,8 @@ THRIVE_API void thrive_ast_print(thrive_ast *node, u32 depth)
 int main(void)
 {
     s8 *source_code =
-        "u32 a = 20 * (400 + 2)\n"
+        "; this is a line comment\n"
+        "u32 a = 20 * (400 + 2) ;another comment 1 * 2\n"
         "ret a\n";
 
     thrive_state state = {0};
@@ -312,11 +317,6 @@ int main(void)
 
         thrive_ast *ast;
 
-        s8 *s2 =
-            "; this is a line comment\n"
-            "u32 a = 20 * (400 + 2) ;another comment 1 * 2\n"
-            "ret a\n";
-
         /*
         s8 *s2 =
             "; this is a line comment          \n"
@@ -327,8 +327,8 @@ int main(void)
             "ret res                           \n";
         */
 
-        s.source_code = s2;
-        s.source_code_size = thrive_string_length(s2);
+        s.source_code = source_code;
+        s.source_code_size = thrive_string_length(source_code);
 
         ast = thrive_ast_parse(&s);
 
