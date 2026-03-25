@@ -304,14 +304,24 @@ THRIVE_API THRIVE_INLINE void thrive_token_next(thrive_state *state)
             break; 
         }
         /* Single char tokens */
-        case '(':  { state->source_code++; state->column++; token.kind = THRIVE_TOKEN_KIND_LPARAN;   break; }
-        case ')':  { state->source_code++; state->column++; token.kind = THRIVE_TOKEN_KIND_RPARAN;   break; }
-        case '=':  { state->source_code++; state->column++; token.kind = THRIVE_TOKEN_KIND_ASSIGN;   break; }
-        case '+':  { state->source_code++; state->column++; token.kind = THRIVE_TOKEN_KIND_ADD;      break; }
-        case '-':  { state->source_code++; state->column++; token.kind = THRIVE_TOKEN_KIND_SUB;      break; }
-        case '*':  { state->source_code++; state->column++; token.kind = THRIVE_TOKEN_KIND_MUL;      break; }
-        case '/':  { state->source_code++; state->column++; token.kind = THRIVE_TOKEN_KIND_DIV;      break; }
-        case '\0': { state->source_code++; state->column++; token.kind = THRIVE_TOKEN_KIND_EOF;      break; }
+        #define THRIVE_TOKEN_CASE_1(c, k) \
+            case c:  {                    \
+              state->source_code++;       \
+              state->column++;            \
+              token.kind = k;             \
+              break; }
+
+        THRIVE_TOKEN_CASE_1('(',  THRIVE_TOKEN_KIND_LPARAN)
+        THRIVE_TOKEN_CASE_1(')',  THRIVE_TOKEN_KIND_RPARAN)
+        THRIVE_TOKEN_CASE_1('=',  THRIVE_TOKEN_KIND_ASSIGN)
+        THRIVE_TOKEN_CASE_1('+',  THRIVE_TOKEN_KIND_ADD   )
+        THRIVE_TOKEN_CASE_1('-',  THRIVE_TOKEN_KIND_SUB   )
+        THRIVE_TOKEN_CASE_1('*',  THRIVE_TOKEN_KIND_MUL   )
+        THRIVE_TOKEN_CASE_1('/',  THRIVE_TOKEN_KIND_DIV   )
+        THRIVE_TOKEN_CASE_1('\0', THRIVE_TOKEN_KIND_EOF   )
+
+        #undef THRIVE_TOKEN_CASE_1
+
         default:   { state->source_code++; state->column++; token.kind = THRIVE_TOKEN_KIND_INVALID;  break; }
     }
     /* clang-format on */
@@ -639,7 +649,6 @@ thrive_ast *thrive_ast_parse(thrive_state *state)
 
 thrive_ast *thrive_ast_fold(thrive_ast *node)
 {
-
     if (!node)
     {
         return 0;
@@ -677,9 +686,13 @@ thrive_ast *thrive_ast_fold(thrive_ast *node)
                 break;
             case THRIVE_TOKEN_KIND_DIV:
                 if (b != 0)
+                {
                     result = a / b;
+                }
                 else
+                {
                     return node;
+                }
                 break;
             default:
                 return node;
