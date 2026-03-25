@@ -98,23 +98,7 @@ THRIVE_API THRIVE_INLINE u32 thrive_string_length(s8 *str)
     return len;
 }
 
-THRIVE_API THRIVE_INLINE u32 thrive_string_equals(s8 *a, s8 *b)
-{
-    while (*a && *b)
-    {
-        if (*a != *b)
-        {
-            return 0;
-        }
-
-        a++;
-        b++;
-    }
-
-    return (*a == *b);
-}
-
-THRIVE_API THRIVE_INLINE u32 thrive_string_equals_length(s8 *a, s8 *b, u32 len)
+THRIVE_API THRIVE_INLINE u32 thrive_string_equals(s8 *a, s8 *b, u32 len)
 {
     u32 i;
 
@@ -280,11 +264,11 @@ THRIVE_API THRIVE_INLINE void thrive_token_next(thrive_state *state)
             {
                 u32 token_length = (u32) (state->source_code - token.start);
 
-                if (thrive_string_equals_length("ret", token.start, token_length)) 
+                if (thrive_string_equals("ret", token.start, token_length)) 
                 {
                     token.kind = THRIVE_TOKEN_KIND_KEYWORD_RET;
                 } 
-                else if (thrive_string_equals_length("u32", token.start, token_length)) 
+                else if (thrive_string_equals("u32", token.start, token_length)) 
                 {
                     token.kind = THRIVE_TOKEN_KIND_KEYWORD_U32;
                 }

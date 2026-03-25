@@ -25,7 +25,7 @@ thrive_var *find_var(s8 *start, u32 length)
 
     for (i = 0; i < var_count; ++i)
     {
-        if (vars[i].length == length && thrive_string_equals_length(vars[i].start, start, length))
+        if (vars[i].length == length && thrive_string_equals(vars[i].start, start, length))
         {
             return &vars[i];
         }

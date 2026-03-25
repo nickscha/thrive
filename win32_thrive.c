@@ -621,11 +621,11 @@ THRIVE_API i32 start(i32 argc, s8 **argv)
 
         for (i = 2; i < argc; ++i)
         {
-            if (thrive_string_equals(argv[i], "--hot-reload"))
+            if (thrive_string_equals(argv[i], "--hot-reload", 12))
             {
                 conf_enable_hot_reload = 1;
             }
-            else if (thrive_string_equals(argv[i], "--optimized"))
+            else if (thrive_string_equals(argv[i], "--optimized", 11))
             {
                 conf_enable_optimized = 1;
             }
