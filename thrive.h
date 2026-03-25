@@ -596,27 +596,265 @@ thrive_ast *parse(thrive_state *s)
     return parse_program(s);
 }
 
-THRIVE_API THRIVE_INLINE thrive_status thrive_lexer(
-    s8 *source_code,
-    u32 source_code_size)
+THRIVE_API thrive_ast *thrive_fold(thrive_ast *node)
 {
-    thrive_status status = {0};
+    if (!node) return 0;
 
-    if (!source_code)
+    switch (node->kind)
     {
-        status.type = THRIVE_STATUS_ERROR_ARGUMENTS;
-        status.message = "No valid source code has been provided!\n";
-        return status;
+    case THRIVE_AST_BINARY:
+    {
+        /* fold children first */
+        node->data.binary.left = thrive_fold(node->data.binary.left);
+        node->data.binary.right = thrive_fold(node->data.binary.right);
+
+        thrive_ast *l = node->data.binary.left;
+        thrive_ast *r = node->data.binary.right;
+
+        /* both constant? */
+        if (l && r &&
+            l->kind == THRIVE_AST_INT &&
+            r->kind == THRIVE_AST_INT)
+        {
+            u32 a = l->data.int_value;
+            u32 b = r->data.int_value;
+            u32 result = 0;
+
+            switch (node->data.binary.op)
+            {
+            case THRIVE_TOKEN_KIND_ADD: result = a + b; break;
+            case THRIVE_TOKEN_KIND_SUB: result = a - b; break;
+            case THRIVE_TOKEN_KIND_MUL: result = a * b; break;
+
+            case THRIVE_TOKEN_KIND_DIV:
+                if (b != 0)
+                    result = a / b;
+                else
+                    return node; /* avoid division by zero */
+                break;
+
+            default:
+                return node;
+            }
+
+            /* mutate node into INT */
+            node->kind = THRIVE_AST_INT;
+            node->data.int_value = result;
+
+            return node;
+        }
+
+        return node;
     }
 
-    if (source_code_size < 1)
+    case THRIVE_AST_ASSIGN:
+        node->data.assign.right =
+            thrive_fold(node->data.assign.right);
+        return node;
+
+    case THRIVE_AST_DECL:
+        if (node->data.decl.value)
+        {
+            node->data.decl.value =
+                thrive_fold(node->data.decl.value);
+        }
+        return node;
+
+    case THRIVE_AST_RETURN:
+        node->data.ret.expr =
+            thrive_fold(node->data.ret.expr);
+        return node;
+
+    case THRIVE_AST_BLOCK:
     {
-        status.type = THRIVE_STATUS_ERROR_ARGUMENTS;
-        status.message = "Source code is empty!\n";
-        return status;
+        u32 i;
+        for (i = 0; i < node->data.block.count; ++i)
+        {
+            node->data.block.items[i] =
+                thrive_fold(node->data.block.items[i]);
+        }
+        return node;
     }
 
-    return status;
+    default:
+        return node;
+    }
+}
+
+/* CODEGEN */
+#define THRIVE_MAX_VARS 256
+
+typedef struct
+{
+    s8 *start;
+    u32 length;
+    i32 offset; /* stack offset (negative from rbp) */
+} thrive_var;
+
+static thrive_var vars[THRIVE_MAX_VARS];
+static u32 var_count = 0;
+static i32 stack_offset = 0;
+
+thrive_var *find_var(s8 *start, u32 length)
+{
+    u32 i;
+    for (i = 0; i < var_count; ++i)
+    {
+        if (vars[i].length == length &&
+            thrive_string_equals_length(vars[i].start, start, length))
+        {
+            return &vars[i];
+        }
+    }
+    return 0;
+}
+
+thrive_var *add_var(s8 *start, u32 length)
+{
+    thrive_var *v = &vars[var_count++];
+
+    stack_offset -= 8; /* 8 bytes per variable */
+
+    v->start = start;
+    v->length = length;
+    v->offset = stack_offset;
+
+    return v;
+}
+
+void gen_expr(thrive_ast *node);
+
+void gen_expr(thrive_ast *node)
+{
+    switch (node->kind)
+    {
+    case THRIVE_AST_INT:
+        printf("    mov rax, %u\n", node->data.int_value);
+        break;
+
+    case THRIVE_AST_NAME:
+    {
+        thrive_var *v = find_var(
+            node->data.name.start,
+            node->data.name.length);
+
+        printf("    mov rax, [rbp%d]\n", v->offset);
+        break;
+    }
+
+    case THRIVE_AST_BINARY:
+    {
+        gen_expr(node->data.binary.left);
+        printf("    push rax\n");
+
+        gen_expr(node->data.binary.right);
+        printf("    pop rbx\n");
+
+        switch (node->data.binary.op)
+        {
+        case THRIVE_TOKEN_KIND_ADD:
+            printf("    add rax, rbx\n");
+            break;
+
+        case THRIVE_TOKEN_KIND_SUB:
+            printf("    sub rbx, rax\n");
+            printf("    mov rax, rbx\n");
+            break;
+
+        case THRIVE_TOKEN_KIND_MUL:
+            printf("    imul rax, rbx\n");
+            break;
+
+        case THRIVE_TOKEN_KIND_DIV:
+            printf("    mov rdx, 0\n");
+            printf("    mov rcx, rax\n");
+            printf("    mov rax, rbx\n");
+            printf("    idiv rcx\n");
+            break;
+
+        default:
+            break;
+        }
+
+        break;
+    }
+
+    case THRIVE_AST_ASSIGN:
+    {
+        thrive_ast *name = node->data.assign.left;
+        thrive_ast *value = node->data.assign.right;
+
+        gen_expr(value);
+
+        thrive_var *v = find_var(
+            name->data.name.start,
+            name->data.name.length);
+
+        printf("    mov [rbp%d], rax\n", v->offset);
+        break;
+    }
+
+    default:
+        break;
+    }
+}
+
+void gen_stmt(thrive_ast *node)
+{
+    switch (node->kind)
+    {
+    case THRIVE_AST_DECL:
+    {
+        thrive_ast *name = node->data.decl.name;
+        thrive_ast *value = node->data.decl.value;
+
+        thrive_var *v = add_var(
+            name->data.name.start,
+            name->data.name.length);
+
+        if (value)
+        {
+            gen_expr(value);
+            printf("    mov [rbp%d], rax\n", v->offset);
+        }
+        break;
+    }
+
+    case THRIVE_AST_RETURN:
+    {
+        gen_expr(node->data.ret.expr);
+
+        printf("    mov rcx, rax\n"); /* argument */
+        printf("    call ExitProcess\n");
+        break;
+    }
+
+    default:
+        gen_expr(node);
+        break;
+    }
+}
+
+void gen_program(thrive_ast *node)
+{
+    printf("default rel\n");
+    printf("extern ExitProcess\n\n");
+
+    printf("section .text\n");
+    printf("global main\n\n");
+
+    printf("main:\n");
+
+    /* prologue */
+    printf("    push rbp\n");
+    printf("    mov rbp, rsp\n");
+    printf("    sub rsp, 32\n"); /* shadow space */
+
+    u32 i;
+    for (i = 0; i < node->data.block.count; ++i)
+    {
+        gen_stmt(node->data.block.items[i]);
+    }
 }
 
 #endif /* THRIVE_H */

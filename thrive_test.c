@@ -147,7 +147,19 @@ int main(void)
 
         ast = parse(&s);
 
+        printf("=== BEFORE ===\n");
         thrive_ast_print(ast, 0);
+
+        thrive_fold(ast);
+
+        printf("=== AFTER ===\n");
+        thrive_ast_print(ast, 0);
+
+        /* Codegen */
+        printf("--------------------\n");
+        {
+            gen_program(ast);
+        }
     }
 
     return 0;
