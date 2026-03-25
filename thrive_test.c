@@ -315,7 +315,8 @@ int main(void)
         thrive_ast *ast;
 
         s8 *s2 =
-            "u32 a = 20 * (400 + 2)\n"
+            "; this is a line comment\n"
+            "u32 a = 20 * (400 + 2) ;another comment 1 * 2\n"
             "ret a\n";
 
         s.source_code = s2;

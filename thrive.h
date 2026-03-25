@@ -228,6 +228,15 @@ THRIVE_API THRIVE_INLINE thrive_token thrive_token_get(thrive_state *state)
 
             return thrive_token_get(state);
         } 
+        /* Line comments */
+        case ';': 
+        {
+            while (*state->source_code && *state->source_code != '\n') {
+                state->source_code++;
+            }
+            
+            return thrive_token_get(state);
+        }
         /* Number processing */
         case '0': case '1': case '2': case '3': case '4': case '5': case '6':
         case '7': case '8': case '9':
@@ -303,7 +312,7 @@ THRIVE_API void thrive_token_next(thrive_state *s)
     s->current = thrive_token_get(s);
 }
 
-THRIVE_API s8 thrive_token_accept(thrive_state *s, thrive_token_kind kind)
+THRIVE_API u8 thrive_token_accept(thrive_state *s, thrive_token_kind kind)
 {
     if (s->current.kind == kind)
     {
@@ -313,13 +322,16 @@ THRIVE_API s8 thrive_token_accept(thrive_state *s, thrive_token_kind kind)
     return 0;
 }
 
-THRIVE_API void thrive_token_expect(thrive_state *s, thrive_token_kind kind)
+THRIVE_API u8 thrive_token_expect(thrive_state *s, thrive_token_kind kind)
 {
     if (s->current.kind != kind)
     {
-        /* TODO: error handling */
+        return 0;
     }
+
     thrive_token_next(s);
+
+    return 1;
 }
 
 THRIVE_API void thrive_token_skip_newlines(thrive_state *s)
@@ -449,7 +461,7 @@ thrive_ast *thrive_ast_parse_primary(thrive_state *s)
         return expr;
     }
 
-    return 0; /* error */
+    return 0;
 }
 
 thrive_ast *thrive_ast_parse_mul(thrive_state *s)
