@@ -289,22 +289,20 @@ int main(void)
         "u32 a = 20 * (400 + 2)\n"
         "ret a\n";
 
-    thrive_status status = {0};
-    thrive_token token = {0};
     thrive_state state = {0};
 
     state.source_code = source_code;
     state.source_code_size = thrive_string_length(source_code);
 
-    token = thrive_token_get(&state);
+    thrive_token_next(&state);
 
-    print_token(token);
+    print_token(state.current);
 
-    while (token.kind)
+    while (state.current.kind)
     {
-        token = thrive_token_get(&state);
+        thrive_token_next(&state);
 
-        print_token(token);
+        print_token(state.current);
     }
 
     /* Parse */
