@@ -36,22 +36,23 @@ void print_token(thrive_token token)
 int main(void)
 {
     s8 *source_code =
-        "u32 a = (400 * 2)\n"
+        "u32 a = 20 * (400 + 2)\n"
         "ret a\n";
-
-    u32 source_code_size = thrive_string_length(source_code);
 
     thrive_status status = {0};
     thrive_token token = {0};
+    thrive_state state = {0};
 
-    stream = source_code;
-    token = thrive_token_next();
+    state.source_code = source_code;
+    state.source_code_size = thrive_string_length(source_code);
+
+    token = thrive_token_next(&state);
 
     print_token(token);
 
     while (token.kind)
     {
-        token = thrive_token_next();
+        token = thrive_token_next(&state);
 
         print_token(token);
     }
