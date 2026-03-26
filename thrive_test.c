@@ -291,7 +291,8 @@ int main(void)
 {
     s8 *source_code =
         "; this is a line comment\n"
-        "u32 a = 20 * (400 + 2) ;another comment 1 * 2\n"
+        "u32 a\n"
+        "a = 20 * (400 + 2) ;another comment 1 * 2"
         "ret a\n";
 
     thrive_state state = {0};
@@ -300,6 +301,15 @@ int main(void)
     state.column = 1;
     state.source_code = source_code;
     state.source_code_size = thrive_string_length(source_code);
+
+    printf("--------------------\n");
+    printf("[size] thrive_state     = %10d\n", (u32) sizeof(thrive_state));
+    printf("[size] thrive_status    = %10d\n", (u32) sizeof(thrive_status));
+    printf("[size] thrive_token     = %10d\n", (u32) sizeof(thrive_token));
+    printf("[size] thrive_ast_block = %10d\n", (u32) sizeof(thrive_ast_block));
+    printf("[size] thrive_ast       = %10d\n", (u32) sizeof(thrive_ast));
+    printf("[size] thrive_ast_pool  = %10d\n", (u32) sizeof(thrive_ast_pool));
+    printf("--------------------\n");
 
     thrive_token_next(&state);
 
@@ -339,7 +349,7 @@ int main(void)
         printf("=== BEFORE ===\n");
         thrive_ast_print(ast, 0);
 
-        thrive_ast_fold(ast);
+        ast = thrive_ast_fold(ast);
 
         printf("=== AFTER ===\n");
         thrive_ast_print(ast, 0);
