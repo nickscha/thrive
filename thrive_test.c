@@ -303,12 +303,12 @@ int main(void)
     state.source_code_size = thrive_string_length(source_code);
 
     printf("--------------------\n");
-    printf("[size] thrive_status    = %10d\n", (u32) sizeof(thrive_status));
-    printf("[size] thrive_token     = %10d\n", (u32) sizeof(thrive_token));
-    printf("[size] thrive_state     = %10d\n", (u32) sizeof(thrive_state));
-    printf("[size] thrive_ast_block = %10d\n", (u32) sizeof(thrive_ast_block));
-    printf("[size] thrive_ast       = %10d\n", (u32) sizeof(thrive_ast));
-    printf("[size] thrive_ast_pool  = %10d\n", (u32) sizeof(thrive_ast_pool));
+    printf("[size] thrive_status    = %10d\n", (u32)sizeof(thrive_status));
+    printf("[size] thrive_token     = %10d\n", (u32)sizeof(thrive_token));
+    printf("[size] thrive_state     = %10d\n", (u32)sizeof(thrive_state));
+    printf("[size] thrive_ast_block = %10d\n", (u32)sizeof(thrive_ast_block));
+    printf("[size] thrive_ast       = %10d\n", (u32)sizeof(thrive_ast));
+    printf("[size] thrive_ast_pool  = %10d\n", (u32)sizeof(thrive_ast_pool));
     printf("--------------------\n");
 
     thrive_token_next(&state);
@@ -345,6 +345,12 @@ int main(void)
         s.source_code_size = thrive_string_length(source_code);
 
         ast = thrive_ast_parse(&s);
+
+        if (s.status.type != THRIVE_STATUS_OK)
+        {
+            printf("[ERROR %d:%d] code: %d message: %s\n", s.status.line, s.status.column, s.status.type, s.status.message);
+            return 1;
+        }
 
         printf("=== BEFORE ===\n");
         thrive_ast_print(ast, 0);

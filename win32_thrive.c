@@ -563,6 +563,7 @@ THRIVE_API i32 thrive_compile(s8 *file_name, void *hConsole, LARGE_INTEGER *freq
         {
             SetConsoleTextAttribute(hConsole, 12); /* red */
             WriteConsoleA(hConsole, s.status.message, thrive_string_length(s.status.message), &written, 0);
+            WriteConsoleA(hConsole, "\n", 1, &written, 0);
             SetConsoleTextAttribute(hConsole, 7);
         }
     }
