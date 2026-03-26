@@ -138,6 +138,60 @@ void gen_expr(thrive_ast *node)
             printf("    movzx rax, al\n");
             break;
 
+        case THRIVE_TOKEN_KIND_AND:
+            printf("    and rax, rbx\n");
+            break;
+
+        case THRIVE_TOKEN_KIND_OR:
+            printf("    or rax, rbx\n");
+            break;
+
+        case THRIVE_TOKEN_KIND_AND_LOGICAL:
+        {
+            int l_false = new_label();
+            int l_end = new_label();
+
+            gen_expr(node->data.binary.left);
+            printf("    cmp rax, 0\n");
+            printf("    je .L%d\n", l_false);
+
+            gen_expr(node->data.binary.right);
+            printf("    cmp rax, 0\n");
+            printf("    je .L%d\n", l_false);
+
+            printf("    mov rax, 1\n");
+            printf("    jmp .L%d\n", l_end);
+
+            printf(".L%d:\n", l_false);
+            printf("    mov rax, 0\n");
+
+            printf(".L%d:\n", l_end);
+            break;
+        }
+
+        case THRIVE_TOKEN_KIND_OR_LOGICAL:
+        {
+            int l_true = new_label();
+            int l_end = new_label();
+
+            gen_expr(node->data.binary.left);
+            printf("    cmp rax, 0\n");
+            printf("    jne .L%d\n", l_true);
+
+            gen_expr(node->data.binary.right);
+            printf("    cmp rax, 0\n");
+            printf("    jne .L%d\n", l_true);
+
+            printf("    mov rax, 0\n");
+            printf("    jmp .L%d\n", l_end);
+
+            printf(".L%d:\n", l_true);
+            printf("    mov rax, 1\n");
+
+            printf(".L%d:\n", l_end);
+            break;
+        }
+
         default:
             break;
         }
