@@ -296,6 +296,8 @@ int main(void)
 
     thrive_state state = {0};
 
+    state.line = 1;
+    state.column = 1;
     state.source_code = source_code;
     state.source_code_size = thrive_string_length(source_code);
 
@@ -327,6 +329,8 @@ int main(void)
             "ret res                           \n";
         */
 
+        s.line = 1;
+        s.column = 1;
         s.source_code = source_code;
         s.source_code_size = thrive_string_length(source_code);
 
