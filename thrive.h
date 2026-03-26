@@ -137,23 +137,23 @@ typedef struct thrive_status
 
 #define THRIVE_HAS_ERROR(s) ((s)->status.type != THRIVE_STATUS_OK)
 
-#define THRIVE_ERROR(s, msg, l, c)                         \
+#define THRIVE_ERROR(s, msg)                               \
     do                                                     \
     {                                                      \
         if ((s)->status.type == THRIVE_STATUS_OK)          \
         {                                                  \
             (s)->status.type = THRIVE_STATUS_ERROR_SYNTAX; \
             (s)->status.message = msg;                     \
-            (s)->status.line = l;                          \
-            (s)->status.column = c;                        \
+            (s)->status.line = (s)->current.line;          \
+            (s)->status.column = (s)->current.column;      \
         }                                                  \
     } while (0)
 
-#define THRIVE_CHECK(s)          \
+#define THRIVE_CHECK_RET(s, ret) \
     do                           \
     {                            \
         if (THRIVE_HAS_ERROR(s)) \
-            return 0;            \
+            return (ret);        \
     } while (0)
 
 /* #############################################################################
@@ -239,6 +239,13 @@ THRIVE_API THRIVE_INLINE void thrive_token_next(thrive_state *state)
     token.start = state->source_code;
     token.line = state->line;
     token.column = state->column;
+
+    if (!*state->source_code)
+    {
+        token.kind = THRIVE_TOKEN_KIND_EOF;
+        state->current = token;
+        return;
+    }
 
     /* clang-format off */
     switch (*state->source_code)
@@ -496,7 +503,7 @@ THRIVE_API thrive_ast *thrive_ast_parse_primary(thrive_state *state)
 {
     thrive_token tok = state->current;
 
-    THRIVE_CHECK(state);
+    THRIVE_CHECK_RET(state, 0);
 
     if (tok.kind == THRIVE_TOKEN_KIND_INT)
     {
@@ -521,25 +528,25 @@ THRIVE_API thrive_ast *thrive_ast_parse_primary(thrive_state *state)
 
     if (tok.kind == THRIVE_TOKEN_KIND_INVALID)
     {
-        THRIVE_ERROR(state, "Invalid token", state->current.line, state->current.column);
+        THRIVE_ERROR(state, "Invalid token");
         return 0;
     }
 
     if (thrive_token_accept(state, THRIVE_TOKEN_KIND_LPARAN))
     {
         thrive_ast *expr = thrive_ast_parse_expr(state);
-        THRIVE_CHECK(state);
+        THRIVE_CHECK_RET(state, 0);
 
         if (!thrive_token_expect(state, THRIVE_TOKEN_KIND_RPARAN))
         {
-            THRIVE_ERROR(state, "Expected ')'", state->current.line, state->current.column);
+            THRIVE_ERROR(state, "Expected ')'");
             return 0;
         }
 
         return expr;
     }
 
-    THRIVE_ERROR(state, "Expected primary expression", state->current.line, state->current.column);
+    THRIVE_ERROR(state, "Expected primary expression");
 
     return 0;
 }
@@ -558,7 +565,7 @@ THRIVE_API thrive_ast *thrive_ast_parse_mul(thrive_state *state)
         thrive_token_next(state);
 
         right = thrive_ast_parse_primary(state);
-        THRIVE_CHECK(state);
+        THRIVE_CHECK_RET(state, 0);
 
         node = thrive_ast_new();
         node->kind = THRIVE_AST_BINARY;
@@ -586,6 +593,7 @@ THRIVE_API thrive_ast *thrive_ast_parse_add(thrive_state *state)
         thrive_token_next(state);
 
         right = thrive_ast_parse_mul(state);
+        THRIVE_CHECK_RET(state, 0);
 
         node = thrive_ast_new();
         node->kind = THRIVE_AST_BINARY;
@@ -611,6 +619,7 @@ THRIVE_API thrive_ast *thrive_ast_parse_assign(thrive_state *state)
         thrive_token_next(state);
 
         right = thrive_ast_parse_assign(state); /* right-associative */
+        THRIVE_CHECK_RET(state, 0);
 
         node = thrive_ast_new();
         node->kind = THRIVE_AST_ASSIGN;
@@ -647,7 +656,11 @@ THRIVE_API thrive_ast *thrive_ast_parse_statement(thrive_state *state)
         thrive_ast *value;
         thrive_ast *node;
 
-        thrive_token_expect(state, THRIVE_TOKEN_KIND_NAME);
+        if (!thrive_token_expect(state, THRIVE_TOKEN_KIND_NAME))
+        {
+            THRIVE_ERROR(state, "Expected name");
+            return 0;
+        }
 
         name = thrive_ast_new();
         name->kind = THRIVE_AST_NAME;
