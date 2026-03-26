@@ -176,6 +176,10 @@ typedef enum thrive_token_kind
     THRIVE_TOKEN_KIND_DEC,        /* -- */
     THRIVE_TOKEN_KIND_EQUALS,     /* == */
     THRIVE_TOKEN_KIND_NOT_EQUALS, /* != */
+    THRIVE_TOKEN_KIND_LT,         /* < */
+    THRIVE_TOKEN_KIND_GT,         /* > */
+    THRIVE_TOKEN_KIND_LT_EQUALS,  /* <= */
+    THRIVE_TOKEN_KIND_GT_EQUALS,  /* >= */
 
     /* Tenary */
     THRIVE_TOKEN_KIND_QUESTION, /* ? */
@@ -204,6 +208,10 @@ s8 *thrive_token_kind_names[] = {
     "DEC",
     "EQUALS",
     "NOT_EQUALS",
+    "LT",
+    "GT",
+    "LT_EQUALS",
+    "GT_EQUALS",
     "QUESTION",
     "COLON",
     "INT",
@@ -385,6 +393,8 @@ THRIVE_API THRIVE_INLINE void thrive_token_next(thrive_state *state)
         THRIVE_TOKEN_CASE_2('!', THRIVE_TOKEN_KIND_NEGATE, '=', THRIVE_TOKEN_KIND_NOT_EQUALS)
         THRIVE_TOKEN_CASE_2('+', THRIVE_TOKEN_KIND_ADD, '+', THRIVE_TOKEN_KIND_INC)
         THRIVE_TOKEN_CASE_2('-', THRIVE_TOKEN_KIND_SUB, '-', THRIVE_TOKEN_KIND_DEC)        
+        THRIVE_TOKEN_CASE_2('<', THRIVE_TOKEN_KIND_LT, '=', THRIVE_TOKEN_KIND_LT_EQUALS)        
+        THRIVE_TOKEN_CASE_2('>', THRIVE_TOKEN_KIND_GT, '=', THRIVE_TOKEN_KIND_GT_EQUALS)        
 
         #undef THRIVE_TOKEN_CASE_2
 
@@ -526,6 +536,17 @@ THRIVE_API thrive_ast *thrive_ast_new(void)
     return &thrive_ast_pool[thrive_ast_count++];
 }
 
+/*
+primary
+→ unary
+→ mul
+→ add
+→ comparison
+→ equality
+→ ternary
+→ assign
+→ expr
+*/
 THRIVE_API thrive_ast *thrive_ast_parse_expr(thrive_state *state);
 
 THRIVE_API thrive_ast *thrive_ast_parse_primary(thrive_state *state)
@@ -583,7 +604,8 @@ THRIVE_API thrive_ast *thrive_ast_parse_primary(thrive_state *state)
 THRIVE_API thrive_ast *thrive_ast_parse_unary(thrive_state *state)
 {
     if (state->current.kind == THRIVE_TOKEN_KIND_SUB ||
-        state->current.kind == THRIVE_TOKEN_KIND_ADD)
+        state->current.kind == THRIVE_TOKEN_KIND_ADD ||
+        state->current.kind == THRIVE_TOKEN_KIND_NEGATE)
     {
         thrive_token_kind op = state->current.kind;
 
@@ -662,9 +684,67 @@ THRIVE_API thrive_ast *thrive_ast_parse_add(thrive_state *state)
     return left;
 }
 
+THRIVE_API thrive_ast *thrive_ast_parse_comparison(thrive_state *state)
+{
+    thrive_ast *left = thrive_ast_parse_add(state);
+
+    while (state->current.kind == THRIVE_TOKEN_KIND_LT ||
+           state->current.kind == THRIVE_TOKEN_KIND_GT ||
+           state->current.kind == THRIVE_TOKEN_KIND_LT_EQUALS ||
+           state->current.kind == THRIVE_TOKEN_KIND_GT_EQUALS)
+    {
+        thrive_token_kind op = state->current.kind;
+        thrive_ast *right;
+        thrive_ast *node;
+
+        thrive_token_next(state);
+
+        right = thrive_ast_parse_add(state);
+        THRIVE_CHECK_RET(state, 0);
+
+        node = thrive_ast_new();
+        node->kind = THRIVE_AST_BINARY;
+        node->data.binary.op = op;
+        node->data.binary.left = left;
+        node->data.binary.right = right;
+
+        left = node;
+    }
+
+    return left;
+}
+
+THRIVE_API thrive_ast *thrive_ast_parse_equality(thrive_state *state)
+{
+    thrive_ast *left = thrive_ast_parse_comparison(state);
+
+    while (state->current.kind == THRIVE_TOKEN_KIND_EQUALS ||
+           state->current.kind == THRIVE_TOKEN_KIND_NOT_EQUALS)
+    {
+        thrive_token_kind op = state->current.kind;
+        thrive_ast *right;
+        thrive_ast *node;
+
+        thrive_token_next(state);
+
+        right = thrive_ast_parse_comparison(state);
+        THRIVE_CHECK_RET(state, 0);
+
+        node = thrive_ast_new();
+        node->kind = THRIVE_AST_BINARY;
+        node->data.binary.op = op;
+        node->data.binary.left = left;
+        node->data.binary.right = right;
+
+        left = node;
+    }
+
+    return left;
+}
+
 THRIVE_API thrive_ast *thrive_ast_parse_ternary(thrive_state *state)
 {
-    thrive_ast *cond = thrive_ast_parse_add(state);
+    thrive_ast *cond = thrive_ast_parse_equality(state);
     THRIVE_CHECK_RET(state, 0);
 
     if (state->current.kind == THRIVE_TOKEN_KIND_QUESTION)

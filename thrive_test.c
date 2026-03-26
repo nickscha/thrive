@@ -101,6 +101,43 @@ void gen_expr(thrive_ast *node)
             printf("    mov rax, rbx\n");
             printf("    idiv rcx\n");
             break;
+
+        case THRIVE_TOKEN_KIND_LT:
+            printf("    cmp rbx, rax\n");
+            printf("    setl al\n");
+            printf("    movzx rax, al\n");
+            break;
+
+        case THRIVE_TOKEN_KIND_GT:
+            printf("    cmp rbx, rax\n");
+            printf("    setg al\n");
+            printf("    movzx rax, al\n");
+            break;
+
+        case THRIVE_TOKEN_KIND_LT_EQUALS:
+            printf("    cmp rbx, rax\n");
+            printf("    setle al\n");
+            printf("    movzx rax, al\n");
+            break;
+
+        case THRIVE_TOKEN_KIND_GT_EQUALS:
+            printf("    cmp rbx, rax\n");
+            printf("    setge al\n");
+            printf("    movzx rax, al\n");
+            break;
+
+        case THRIVE_TOKEN_KIND_EQUALS:
+            printf("    cmp rbx, rax\n");
+            printf("    sete al\n");
+            printf("    movzx rax, al\n");
+            break;
+
+        case THRIVE_TOKEN_KIND_NOT_EQUALS:
+            printf("    cmp rbx, rax\n");
+            printf("    setne al\n");
+            printf("    movzx rax, al\n");
+            break;
+
         default:
             break;
         }
@@ -118,6 +155,11 @@ void gen_expr(thrive_ast *node)
             break;
         case THRIVE_TOKEN_KIND_ADD:
             /* no-op */
+            break;
+        case THRIVE_TOKEN_KIND_NEGATE:
+            printf("    cmp rax, 0\n");
+            printf("    sete al\n");
+            printf("    movzx rax, al\n");
             break;
         default:
             break;
