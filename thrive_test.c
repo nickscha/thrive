@@ -19,6 +19,13 @@ static thrive_var vars[THRIVE_MAX_VARS];
 static u32 var_count = 0;
 static i32 stack_offset = 0;
 
+static int label_id = 0;
+
+i32 new_label(void)
+{
+    return label_id++;
+}
+
 thrive_var *find_var(s8 *start, u32 length)
 {
     u32 i;
@@ -97,6 +104,48 @@ void gen_expr(thrive_ast *node)
         default:
             break;
         }
+        break;
+    }
+
+    case THRIVE_AST_UNARY:
+    {
+        gen_expr(node->data.unary.expr);
+
+        switch (node->data.unary.op)
+        {
+        case THRIVE_TOKEN_KIND_SUB:
+            printf("    neg rax\n");
+            break;
+        case THRIVE_TOKEN_KIND_ADD:
+            /* no-op */
+            break;
+        default:
+            break;
+        }
+
+        break;
+    }
+
+    case THRIVE_AST_TERNARY:
+    {
+        i32 l_else = new_label();
+        i32 l_end = new_label();
+
+        /* evaluate condition */
+        gen_expr(node->data.ternary.cond);
+
+        printf("    cmp rax, 0\n");
+        printf("    je .L%d\n", l_else);
+
+        /* then branch */
+        gen_expr(node->data.ternary.then_expr);
+        printf("    jmp .L%d\n", l_end);
+
+        /* else branch */
+        printf(".L%d:\n", l_else);
+        gen_expr(node->data.ternary.else_expr);
+
+        printf(".L%d:\n", l_end);
         break;
     }
 
@@ -244,6 +293,14 @@ THRIVE_API void thrive_ast_print(thrive_ast *node, u32 depth)
 
         thrive_ast_print(node->data.binary.left, depth + 1);
         thrive_ast_print(node->data.binary.right, depth + 1);
+        break;
+
+    case THRIVE_AST_TERNARY:
+        printf("TERNARY\n");
+
+        thrive_ast_print(node->data.ternary.cond, depth + 1);
+        thrive_ast_print(node->data.ternary.then_expr, depth + 1);
+        thrive_ast_print(node->data.ternary.else_expr, depth + 1);
         break;
 
     case THRIVE_AST_RETURN:
