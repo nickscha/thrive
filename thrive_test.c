@@ -138,11 +138,11 @@ void gen_expr(thrive_ast *node)
             printf("    movzx rax, al\n");
             break;
 
-        case THRIVE_TOKEN_KIND_AND:
+        case THRIVE_TOKEN_KIND_AND_BITWISE:
             printf("    and rax, rbx\n");
             break;
 
-        case THRIVE_TOKEN_KIND_OR:
+        case THRIVE_TOKEN_KIND_OR_BITWISE:
             printf("    or rax, rbx\n");
             break;
 
@@ -292,6 +292,36 @@ void gen_stmt(thrive_ast *node)
 
         break;
     }
+    case THRIVE_AST_IF:
+    {
+        int l_else = new_label();
+        int l_end = new_label();
+
+        /* condition */
+        gen_expr(node->data.if_stmt.cond);
+
+        printf("    cmp rax, 0\n");
+
+        if (node->data.if_stmt.else_branch)
+            printf("    je .L%d\n", l_else);
+        else
+            printf("    je .L%d\n", l_end);
+
+        /* then */
+        gen_stmt(node->data.if_stmt.then_branch);
+
+        if (node->data.if_stmt.else_branch)
+        {
+            printf("    jmp .L%d\n", l_end);
+
+            printf(".L%d:\n", l_else);
+            gen_stmt(node->data.if_stmt.else_branch);
+        }
+
+        printf(".L%d:\n", l_end);
+
+        break;
+    }
     default:
         gen_expr(node);
         break;
@@ -399,6 +429,28 @@ THRIVE_API void thrive_ast_print(thrive_ast *node, u32 depth)
         thrive_ast_print(node->data.ternary.else_expr, depth + 1);
         break;
 
+    case THRIVE_AST_IF:
+    {
+        printf("IF\n");
+
+        thrive_print_indent(depth + 1);
+        printf("COND\n");
+        thrive_ast_print(node->data.if_stmt.cond, depth + 2);
+
+        thrive_print_indent(depth + 1);
+        printf("THEN\n");
+        thrive_ast_print(node->data.if_stmt.then_branch, depth + 2);
+
+        if (node->data.if_stmt.else_branch)
+        {
+            thrive_print_indent(depth + 1);
+            printf("ELSE\n");
+            thrive_ast_print(node->data.if_stmt.else_branch, depth + 2);
+        }
+
+        break;
+    }
+
     case THRIVE_AST_RETURN:
         printf("RETURN\n");
         thrive_ast_print(node->data.ret.expr, depth + 1);
@@ -447,6 +499,18 @@ int main(void)
         "u32 a\n"
         "a = 20 * (400 + 2) ;another comment 1 * 2\n"
         "ret a\n";
+
+    /*
+    s8 *source_code =
+        "u32 a = 10\n"
+        "if (a > 5) {\n"
+        " a = 1\n"
+        " a = 2\n"
+        "} else {\n"
+        " a = 3\n"
+        "}\n"
+        "ret a\n";
+    */
 
     thrive_state state = {0};
 

@@ -166,6 +166,8 @@ typedef enum thrive_token_kind
     THRIVE_TOKEN_KIND_NEW_LINE,
     THRIVE_TOKEN_KIND_LPARAN,      /* ( */
     THRIVE_TOKEN_KIND_RPARAN,      /* ) */
+    THRIVE_TOKEN_KIND_LBRACE,      /* { */
+    THRIVE_TOKEN_KIND_RBRACE,      /* } */
     THRIVE_TOKEN_KIND_ASSIGN,      /* = */
     THRIVE_TOKEN_KIND_NEGATE,      /* ! */
     THRIVE_TOKEN_KIND_ADD,         /* + */
@@ -184,10 +186,12 @@ typedef enum thrive_token_kind
     THRIVE_TOKEN_KIND_GT,          /* > */
     THRIVE_TOKEN_KIND_LT_EQUALS,   /* <= */
     THRIVE_TOKEN_KIND_GT_EQUALS,   /* >= */
-    THRIVE_TOKEN_KIND_OR,          /* | */
+    THRIVE_TOKEN_KIND_OR_BITWISE,  /* | */
     THRIVE_TOKEN_KIND_OR_LOGICAL,  /* || */
-    THRIVE_TOKEN_KIND_AND,         /* & */
+    THRIVE_TOKEN_KIND_AND_BITWISE, /* & */
     THRIVE_TOKEN_KIND_AND_LOGICAL, /* && */
+    THRIVE_TOKEN_KIND_XOR_BITWISE, /* ^ */
+    THRIVE_TOKEN_KIND_NOT_BITWISE, /* ~ */
 
     /* Tenary */
     THRIVE_TOKEN_KIND_QUESTION, /* ? */
@@ -197,6 +201,8 @@ typedef enum thrive_token_kind
     THRIVE_TOKEN_KIND_NAME,
     THRIVE_TOKEN_KIND_KEYWORD_RET,
     THRIVE_TOKEN_KIND_KEYWORD_U32,
+    THRIVE_TOKEN_KIND_KEYWORD_IF,
+    THRIVE_TOKEN_KIND_KEYWORD_ELSE,
     THRIVE_TOKEN_KIND_INVALID
 
 } thrive_token_kind;
@@ -206,6 +212,8 @@ s8 *thrive_token_kind_names[] = {
     "NEWLINE",
     "LPARAN",
     "RPARAN",
+    "LBRACE",
+    "RBRACE",
     "ASSIGN",
     "NEGATE",
     "ADD",
@@ -224,16 +232,20 @@ s8 *thrive_token_kind_names[] = {
     "GT",
     "LT_EQUALS",
     "GT_EQUALS",
-    "OR",
+    "OR_BITWISE",
     "OR_LOGICAL",
-    "AND",
+    "AND_BITWISE",
     "AND_LOGICAL",
+    "XOR_BITWISE",
+    "NOT_BITWISE",
     "QUESTION",
     "COLON",
     "INT",
     "NAME",
     "KW_RET",
     "KW_U32",
+    "KW_IF",
+    "KW_ELSE",
     "INVALID"};
 
 typedef struct thrive_token
@@ -361,6 +373,14 @@ THRIVE_API THRIVE_INLINE void thrive_token_next(thrive_state *state)
                 else if (thrive_string_equals("u32", token.start, token_length)) 
                 {
                     token.kind = THRIVE_TOKEN_KIND_KEYWORD_U32;
+                } 
+                else if (thrive_string_equals("if", token.start, token_length)) 
+                {
+                    token.kind = THRIVE_TOKEN_KIND_KEYWORD_IF;
+                }
+                else if (thrive_string_equals("else", token.start, token_length)) 
+                {
+                    token.kind = THRIVE_TOKEN_KIND_KEYWORD_ELSE;
                 }
             }
 
@@ -387,6 +407,8 @@ THRIVE_API THRIVE_INLINE void thrive_token_next(thrive_state *state)
         THRIVE_TOKEN_CASE_1(':',  THRIVE_TOKEN_KIND_COLON   )
         THRIVE_TOKEN_CASE_1('(',  THRIVE_TOKEN_KIND_LPARAN  )
         THRIVE_TOKEN_CASE_1(')',  THRIVE_TOKEN_KIND_RPARAN  )
+        THRIVE_TOKEN_CASE_1('{',  THRIVE_TOKEN_KIND_LBRACE  )
+        THRIVE_TOKEN_CASE_1('}',  THRIVE_TOKEN_KIND_RBRACE  )
         THRIVE_TOKEN_CASE_1('\0', THRIVE_TOKEN_KIND_EOF     )
 
         #undef THRIVE_TOKEN_CASE_1
@@ -409,8 +431,8 @@ THRIVE_API THRIVE_INLINE void thrive_token_next(thrive_state *state)
         THRIVE_TOKEN_CASE_2('/', THRIVE_TOKEN_KIND_DIV, '=', THRIVE_TOKEN_KIND_DIV_ASSIGN)
         THRIVE_TOKEN_CASE_2('<', THRIVE_TOKEN_KIND_LT, '=', THRIVE_TOKEN_KIND_LT_EQUALS)        
         THRIVE_TOKEN_CASE_2('>', THRIVE_TOKEN_KIND_GT, '=', THRIVE_TOKEN_KIND_GT_EQUALS)        
-        THRIVE_TOKEN_CASE_2('|', THRIVE_TOKEN_KIND_OR, '|', THRIVE_TOKEN_KIND_OR_LOGICAL)     
-        THRIVE_TOKEN_CASE_2('&', THRIVE_TOKEN_KIND_AND, '&', THRIVE_TOKEN_KIND_AND_LOGICAL)     
+        THRIVE_TOKEN_CASE_2('|', THRIVE_TOKEN_KIND_OR_BITWISE, '|', THRIVE_TOKEN_KIND_OR_LOGICAL)     
+        THRIVE_TOKEN_CASE_2('&', THRIVE_TOKEN_KIND_AND_BITWISE, '&', THRIVE_TOKEN_KIND_AND_LOGICAL)     
 
         #undef THRIVE_TOKEN_CASE_2
 
@@ -484,6 +506,7 @@ typedef enum thrive_ast_kind
     THRIVE_AST_BINARY,
     THRIVE_AST_UNARY,   /* -a */
     THRIVE_AST_TERNARY, /* 1 > a ? 1 : 0 */
+    THRIVE_AST_IF,
     THRIVE_AST_RETURN,
     THRIVE_AST_ASSIGN,
     THRIVE_AST_DECL,
@@ -534,6 +557,13 @@ struct thrive_ast
             thrive_ast *then_expr;
             thrive_ast *else_expr;
         } ternary;
+
+        struct
+        {
+            thrive_ast *cond;
+            thrive_ast *then_branch;
+            thrive_ast *else_branch; /* can be NULL */
+        } if_stmt;
 
         struct
         {
@@ -646,7 +676,8 @@ THRIVE_API thrive_ast *thrive_ast_parse_unary(thrive_state *state)
 {
     if (state->current.kind == THRIVE_TOKEN_KIND_SUB ||
         state->current.kind == THRIVE_TOKEN_KIND_ADD ||
-        state->current.kind == THRIVE_TOKEN_KIND_NEGATE)
+        state->current.kind == THRIVE_TOKEN_KIND_NEGATE ||
+        state->current.kind == THRIVE_TOKEN_KIND_NOT_BITWISE)
     {
         thrive_token_kind op = state->current.kind;
 
@@ -787,7 +818,7 @@ THRIVE_API thrive_ast *thrive_ast_parse_bitwise_and(thrive_state *state)
 {
     thrive_ast *left = thrive_ast_parse_equality(state);
 
-    while (state->current.kind == THRIVE_TOKEN_KIND_AND)
+    while (state->current.kind == THRIVE_TOKEN_KIND_AND_BITWISE)
     {
         thrive_token_kind op = state->current.kind;
 
@@ -815,7 +846,7 @@ THRIVE_API thrive_ast *thrive_ast_parse_bitwise_or(thrive_state *state)
 {
     thrive_ast *left = thrive_ast_parse_bitwise_and(state);
 
-    while (state->current.kind == THRIVE_TOKEN_KIND_OR)
+    while (state->current.kind == THRIVE_TOKEN_KIND_OR_BITWISE)
     {
         thrive_token_kind op = state->current.kind;
 
@@ -1003,8 +1034,61 @@ THRIVE_API thrive_ast *thrive_ast_parse_expr(thrive_state *state)
     return thrive_ast_parse_assign(state);
 }
 
+THRIVE_API thrive_ast *thrive_ast_parse_statement(thrive_state *state);
+
+THRIVE_API thrive_ast *thrive_ast_parse_block_stmt(thrive_state *state)
+{
+    thrive_ast *node = thrive_ast_new();
+    node->kind = THRIVE_AST_BLOCK;
+    node->data.block.count = 0;
+
+    if (!thrive_token_expect(state, THRIVE_TOKEN_KIND_LBRACE))
+    {
+        THRIVE_ERROR(state, "Expected '{'");
+        return 0;
+    }
+
+    thrive_token_skip_newlines(state);
+
+    while (state->current.kind != THRIVE_TOKEN_KIND_RBRACE &&
+           state->current.kind != THRIVE_TOKEN_KIND_EOF)
+    {
+        thrive_ast *stmt;
+
+        if (node->data.block.count >= THRIVE_BLOCK_MAX)
+        {
+            THRIVE_ERROR(state, "Block too large");
+            return 0;
+        }
+
+        stmt = thrive_ast_parse_statement(state);
+
+        if (!stmt)
+        {
+            return 0;
+        }
+
+        node->data.block.items[node->data.block.count++] = stmt;
+
+        thrive_token_skip_newlines(state);
+    }
+
+    if (!thrive_token_expect(state, THRIVE_TOKEN_KIND_RBRACE))
+    {
+        THRIVE_ERROR(state, "Expected '}'");
+        return 0;
+    }
+
+    return node;
+}
+
 THRIVE_API thrive_ast *thrive_ast_parse_statement(thrive_state *state)
 {
+    if (state->current.kind == THRIVE_TOKEN_KIND_LBRACE)
+    {
+        return thrive_ast_parse_block_stmt(state);
+    }
+
     /* return */
     if (thrive_token_accept(state, THRIVE_TOKEN_KIND_KEYWORD_RET))
     {
@@ -1048,7 +1132,62 @@ THRIVE_API thrive_ast *thrive_ast_parse_statement(thrive_state *state)
         return node;
     }
 
-    return thrive_ast_parse_expr(state);
+    if (thrive_token_accept(state, THRIVE_TOKEN_KIND_KEYWORD_IF))
+    {
+        thrive_ast *node = thrive_ast_new();
+        node->kind = THRIVE_AST_IF;
+
+        if (!thrive_token_expect(state, THRIVE_TOKEN_KIND_LPARAN))
+        {
+            THRIVE_ERROR(state, "Expected '(' after if");
+            return 0;
+        }
+
+        node->data.if_stmt.cond = thrive_ast_parse_expr(state);
+
+        if (!thrive_token_expect(state, THRIVE_TOKEN_KIND_RPARAN))
+        {
+            THRIVE_ERROR(state, "Expected ')'");
+            return 0;
+        }
+
+        thrive_token_skip_newlines(state);
+
+        if (state->current.kind == THRIVE_TOKEN_KIND_LBRACE)
+        {
+            node->data.if_stmt.then_branch = thrive_ast_parse_block_stmt(state);
+        }
+        else
+        {
+            node->data.if_stmt.then_branch = thrive_ast_parse_statement(state);
+        }
+
+        node->data.if_stmt.else_branch = 0;
+
+        thrive_token_skip_newlines(state);
+
+        if (thrive_token_accept(state, THRIVE_TOKEN_KIND_KEYWORD_ELSE))
+        {
+            thrive_token_skip_newlines(state);
+
+            if (state->current.kind == THRIVE_TOKEN_KIND_LBRACE)
+            {
+                node->data.if_stmt.else_branch = thrive_ast_parse_block_stmt(state);
+            }
+            else
+            {
+                node->data.if_stmt.else_branch = thrive_ast_parse_statement(state);
+            }
+        }
+
+        return node;
+    }
+
+    {
+        thrive_ast *expr = thrive_ast_parse_expr(state);
+        thrive_token_skip_newlines(state);
+        return expr;
+    }
 }
 
 THRIVE_API thrive_ast *thrive_ast_parse_program(thrive_state *state)
