@@ -488,7 +488,8 @@ THRIVE_API void win32_io_pri32_ms(void *hConsole, s8 *name, u32 name_length, f64
 typedef enum win32_thrive_metrics
 {
     METRIC_IO_FILE_READ = 0,
-    METRIC_COMPILATION,
+    METRIC_PARSING,
+    METRIC_FOLDING,
     METRIC_COUNT
 
 } win32_thrive_metrics;
@@ -496,7 +497,8 @@ typedef enum win32_thrive_metrics
 /* Has to match with enum structure */
 static s8 *win32_thrive_metric_names[] = {
     "time_io_file_read ",
-    "time_compilation  "};
+    "time_parsing      ",
+    "time_folding      "};
 
 typedef struct win32_thrive_metric
 {
@@ -539,16 +541,28 @@ THRIVE_API i32 thrive_compile(s8 *file_name, void *hConsole, LARGE_INTEGER *freq
 
     /* Compilation */
     {
-        thrive_status status = {0};
+        thrive_state s = {0};
+        thrive_ast *ast;
 
-        QueryPerformanceCounter(&metrics[METRIC_COMPILATION].time_start);
-        /*status = thrive_lexer(source_code, source_code_size);*/
-        QueryPerformanceCounter(&metrics[METRIC_COMPILATION].time_end);
+        s.line = 1;
+        s.column = 1;
+        s.source_code = source_code;
+        s.source_code_size = source_code_size;
 
-        if (status.type != THRIVE_STATUS_OK)
+        QueryPerformanceCounter(&metrics[METRIC_PARSING].time_start);
+        ast = thrive_ast_parse(&s);
+        QueryPerformanceCounter(&metrics[METRIC_PARSING].time_end);
+
+        QueryPerformanceCounter(&metrics[METRIC_FOLDING].time_start);
+        ast = thrive_ast_fold(ast);
+        QueryPerformanceCounter(&metrics[METRIC_FOLDING].time_end);
+
+        (void)ast;
+
+        if (s.status.type != THRIVE_STATUS_OK)
         {
             SetConsoleTextAttribute(hConsole, 12); /* red */
-            WriteConsoleA(hConsole, status.message, thrive_string_length(status.message), &written, 0);
+            WriteConsoleA(hConsole, s.status.message, thrive_string_length(s.status.message), &written, 0);
             SetConsoleTextAttribute(hConsole, 7);
         }
     }

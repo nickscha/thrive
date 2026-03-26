@@ -145,8 +145,11 @@ typedef enum thrive_token_kind
     THRIVE_TOKEN_KIND_ASSIGN,
     THRIVE_TOKEN_KIND_ADD,
     THRIVE_TOKEN_KIND_SUB,
-    THRIVE_TOKEN_KIND_MUL,
-    THRIVE_TOKEN_KIND_DIV,
+    THRIVE_TOKEN_KIND_MUL,   
+    THRIVE_TOKEN_KIND_DIV, 
+    THRIVE_TOKEN_KIND_INC,    /* ++ */
+    THRIVE_TOKEN_KIND_DEC,    /* -- */
+    THRIVE_TOKEN_KIND_EQUALS, /* == */
     THRIVE_TOKEN_KIND_INT,
     THRIVE_TOKEN_KIND_NAME,
     THRIVE_TOKEN_KIND_KEYWORD_RET,
@@ -165,6 +168,9 @@ s8 *thrive_token_kind_names[] = {
     "SUB",
     "MUL",
     "DIV",
+    "INC",
+    "DEC",
+    "EQUALS",
     "INT",
     "NAME",
     "KW_RET",
@@ -313,14 +319,29 @@ THRIVE_API THRIVE_INLINE void thrive_token_next(thrive_state *state)
 
         THRIVE_TOKEN_CASE_1('(',  THRIVE_TOKEN_KIND_LPARAN)
         THRIVE_TOKEN_CASE_1(')',  THRIVE_TOKEN_KIND_RPARAN)
-        THRIVE_TOKEN_CASE_1('=',  THRIVE_TOKEN_KIND_ASSIGN)
-        THRIVE_TOKEN_CASE_1('+',  THRIVE_TOKEN_KIND_ADD   )
-        THRIVE_TOKEN_CASE_1('-',  THRIVE_TOKEN_KIND_SUB   )
         THRIVE_TOKEN_CASE_1('*',  THRIVE_TOKEN_KIND_MUL   )
         THRIVE_TOKEN_CASE_1('/',  THRIVE_TOKEN_KIND_DIV   )
         THRIVE_TOKEN_CASE_1('\0', THRIVE_TOKEN_KIND_EOF   )
 
         #undef THRIVE_TOKEN_CASE_1
+
+        #define THRIVE_TOKEN_CASE_2(c1, k1, c2, k2) \
+            case c1:  {                     \
+              state->source_code++;         \
+              state->column++;              \
+              token.kind = k1;              \
+              if (*state->source_code == c2) { \
+                 token.kind = k2;              \
+                 state->source_code++;         \
+                 state->column++;              \
+              }                                \
+              break; }
+
+        THRIVE_TOKEN_CASE_2('=', THRIVE_TOKEN_KIND_ASSIGN, '=', THRIVE_TOKEN_KIND_EQUALS)
+        THRIVE_TOKEN_CASE_2('+', THRIVE_TOKEN_KIND_ADD, '+', THRIVE_TOKEN_KIND_INC)
+        THRIVE_TOKEN_CASE_2('-', THRIVE_TOKEN_KIND_SUB, '-', THRIVE_TOKEN_KIND_DEC)        
+
+        #undef THRIVE_TOKEN_CASE_2
 
         default:   { state->source_code++; state->column++; token.kind = THRIVE_TOKEN_KIND_INVALID;  break; }
     }
