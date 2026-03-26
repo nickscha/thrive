@@ -304,11 +304,11 @@ THRIVE_API THRIVE_INLINE void thrive_token_next(thrive_state *state)
             break; 
         }
         /* Single char tokens */
-        #define THRIVE_TOKEN_CASE_1(c, k) \
-            case c:  {                    \
-              state->source_code++;       \
-              state->column++;            \
-              token.kind = k;             \
+        #define THRIVE_TOKEN_CASE_1(c1, k1) \
+            case c1:  {                     \
+              state->source_code++;         \
+              state->column++;              \
+              token.kind = k1;              \
               break; }
 
         THRIVE_TOKEN_CASE_1('(',  THRIVE_TOKEN_KIND_LPARAN)
