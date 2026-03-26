@@ -519,6 +519,12 @@ THRIVE_API thrive_ast *thrive_ast_parse_primary(thrive_state *state)
         return node;
     }
 
+    if (tok.kind == THRIVE_TOKEN_KIND_INVALID)
+    {
+        THRIVE_ERROR(state, "Invalid token", state->current.line, state->current.column);
+        return 0;
+    }
+
     if (thrive_token_accept(state, THRIVE_TOKEN_KIND_LPARAN))
     {
         thrive_ast *expr = thrive_ast_parse_expr(state);
@@ -526,14 +532,14 @@ THRIVE_API thrive_ast *thrive_ast_parse_primary(thrive_state *state)
 
         if (!thrive_token_expect(state, THRIVE_TOKEN_KIND_RPARAN))
         {
-            THRIVE_ERROR(state, "Expected ')'", tok.line, tok.column);
+            THRIVE_ERROR(state, "Expected ')'", state->current.line, state->current.column);
             return 0;
         }
 
         return expr;
     }
 
-    THRIVE_ERROR(state, "Expected primary expression", tok.line, tok.column);
+    THRIVE_ERROR(state, "Expected primary expression", state->current.line, state->current.column);
 
     return 0;
 }
@@ -552,6 +558,7 @@ THRIVE_API thrive_ast *thrive_ast_parse_mul(thrive_state *state)
         thrive_token_next(state);
 
         right = thrive_ast_parse_primary(state);
+        THRIVE_CHECK(state);
 
         node = thrive_ast_new();
         node->kind = THRIVE_AST_BINARY;
@@ -685,7 +692,8 @@ THRIVE_API thrive_ast *thrive_ast_parse_program(thrive_state *state)
 
         if (node->data.block.count >= THRIVE_BLOCK_MAX)
         {
-            /* TODO: overflow */
+            state->status.type = THRIVE_STATUS_ERROR_MEMORY;
+            state->status.message = "THRIVE_BLOCK_MAX memory limit exceeded!";
             break;
         }
 
