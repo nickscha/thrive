@@ -520,6 +520,8 @@ int main(void)
     state.source_code_size = thrive_string_length(source_code);
 
     printf("--------------------\n");
+    printf("%s", source_code);
+    printf("--------------------\n");
     printf("[size] thrive_status    = %10d\n", (u32)sizeof(thrive_status));
     printf("[size] thrive_token     = %10d\n", (u32)sizeof(thrive_token));
     printf("[size] thrive_state     = %10d\n", (u32)sizeof(thrive_state));
