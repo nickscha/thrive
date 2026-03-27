@@ -200,23 +200,41 @@ void gen_expr(thrive_ast *node)
 
     case THRIVE_AST_UNARY:
     {
-        gen_expr(node->data.unary.expr);
-
-        switch (node->data.unary.op)
+        if (node->data.unary.op == THRIVE_TOKEN_KIND_INC || node->data.unary.op == THRIVE_TOKEN_KIND_DEC)
         {
-        case THRIVE_TOKEN_KIND_SUB:
-            printf("    neg rax\n");
-            break;
-        case THRIVE_TOKEN_KIND_ADD:
-            /* no-op */
-            break;
-        case THRIVE_TOKEN_KIND_NEGATE:
-            printf("    cmp rax, 0\n");
-            printf("    sete al\n");
-            printf("    movzx rax, al\n");
-            break;
-        default:
-            break;
+            thrive_ast *name_node = node->data.unary.expr;
+            thrive_var *v = find_var(name_node->data.name.start, name_node->data.name.length);
+
+            if (node->data.unary.op == THRIVE_TOKEN_KIND_INC)
+            {
+                printf("    inc qword [rbp%d]\n", v->offset);
+            }
+            else
+            {
+                printf("    dec qword [rbp%d]\n", v->offset);
+            }
+            printf("    mov rax, [rbp%d]\n", v->offset);
+        }
+        else
+        {
+            gen_expr(node->data.unary.expr);
+
+            switch (node->data.unary.op)
+            {
+            case THRIVE_TOKEN_KIND_SUB:
+                printf("    neg rax\n");
+                break;
+            case THRIVE_TOKEN_KIND_ADD:
+                /* no-op */
+                break;
+            case THRIVE_TOKEN_KIND_NEGATE:
+                printf("    cmp rax, 0\n");
+                printf("    sete al\n");
+                printf("    movzx rax, al\n");
+                break;
+            default:
+                break;
+            }
         }
 
         break;
@@ -322,6 +340,50 @@ void gen_stmt(thrive_ast *node)
 
         break;
     }
+    case THRIVE_AST_FOR:
+    {
+        i32 l_start = new_label();
+        i32 l_end = new_label();
+
+        if (node->data.for_loop.init)
+        {
+            gen_expr(node->data.for_loop.init);
+        }
+
+        printf(".L%d:\n", l_start);
+
+        /* 2. Condition: i < 10 */
+        if (node->data.for_loop.cond)
+        {
+            gen_expr(node->data.for_loop.cond);
+            printf("    cmp rax, 0\n");
+            printf("    je .L%d\n", l_end);
+        }
+
+        if (node->data.for_loop.body)
+        {
+            gen_stmt(node->data.for_loop.body);
+        }
+
+        if (node->data.for_loop.step)
+        {
+            gen_expr(node->data.for_loop.step);
+        }
+
+        printf("    jmp .L%d\n", l_start);
+        printf(".L%d:\n", l_end);
+        break;
+    }
+    case THRIVE_AST_BLOCK:
+    {
+        u32 i;
+
+        for (i = 0; i < node->data.block.count; ++i)
+        {
+            gen_stmt(node->data.block.items[i]);
+        }
+        break;
+    }
     default:
         gen_expr(node);
         break;
@@ -421,6 +483,26 @@ THRIVE_API void thrive_ast_print(thrive_ast *node, u32 depth)
         thrive_ast_print(node->data.binary.right, depth + 1);
         break;
 
+    case THRIVE_AST_UNARY:
+    {
+        if (node->data.unary.op == THRIVE_TOKEN_KIND_INC)
+        {
+            printf("POST_INC\n");
+            thrive_ast_print(node->data.unary.expr, depth + 1);
+        }
+        else if (node->data.unary.op == THRIVE_TOKEN_KIND_DEC)
+        {
+            printf("POST_DEC\n");
+            thrive_ast_print(node->data.unary.expr, depth + 1);
+        }
+        else
+        {
+            printf("UNARY %s\n", thrive_token_kind_names[node->data.unary.op]);
+            thrive_ast_print(node->data.unary.expr, depth + 1);
+        }
+        break;
+    }
+
     case THRIVE_AST_TERNARY:
         printf("TERNARY\n");
 
@@ -448,6 +530,28 @@ THRIVE_API void thrive_ast_print(thrive_ast *node, u32 depth)
             thrive_ast_print(node->data.if_stmt.else_branch, depth + 2);
         }
 
+        break;
+    }
+
+    case THRIVE_AST_FOR:
+    {
+        printf("FOR\n");
+
+        thrive_print_indent(depth + 1);
+        printf("INIT\n");
+        thrive_ast_print(node->data.for_loop.init, depth + 2);
+
+        thrive_print_indent(depth + 1);
+        printf("COND\n");
+        thrive_ast_print(node->data.for_loop.cond, depth + 2);
+
+        thrive_print_indent(depth + 1);
+        printf("STEP\n");
+        thrive_ast_print(node->data.for_loop.step, depth + 2);
+
+        thrive_print_indent(depth + 1);
+        printf("BODY\n");
+        thrive_ast_print(node->data.for_loop.body, depth + 2);
         break;
     }
 
@@ -494,13 +598,23 @@ THRIVE_API void thrive_ast_print(thrive_ast *node, u32 depth)
  */
 int main(void)
 {
+
+    s8 *source_code =
+        "u32 i = 1\n"
+        "\n"
+        "for(i = 0 : i < 10 : i++) {\n"
+        " i += 1\n"
+        "}\n"
+        "\n"
+        "ret i\n";
+
+    /*
     s8 *source_code =
         "; this is a line comment\n"
         "u32 a\n"
         "a = 20 * (400 + 2) ;another comment 1 * 2\n"
         "ret a\n";
 
-    /*
     s8 *source_code =
         "u32 a = 10\n"
         "if (a > 5) {\n"

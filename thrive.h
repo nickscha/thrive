@@ -203,6 +203,7 @@ typedef enum thrive_token_kind
     THRIVE_TOKEN_KIND_KEYWORD_U32,
     THRIVE_TOKEN_KIND_KEYWORD_IF,
     THRIVE_TOKEN_KIND_KEYWORD_ELSE,
+    THRIVE_TOKEN_KIND_KEYWORD_FOR,
     THRIVE_TOKEN_KIND_INVALID
 
 } thrive_token_kind;
@@ -246,6 +247,7 @@ s8 *thrive_token_kind_names[] = {
     "KW_U32",
     "KW_IF",
     "KW_ELSE",
+    "KW_FOR",
     "INVALID"};
 
 typedef struct thrive_token
@@ -377,6 +379,8 @@ repeat:
                         token.kind = THRIVE_TOKEN_KIND_KEYWORD_RET;
                     else if (token.start[0] == 'u' && token.start[1] == '3' && token.start[2] == '2')
                         token.kind = THRIVE_TOKEN_KIND_KEYWORD_U32;
+                    else if (token.start[0] == 'f' && token.start[1] == 'o' && token.start[2] == 'r')
+                        token.kind = THRIVE_TOKEN_KIND_KEYWORD_FOR;
                     break;
                 case 4:
                     if (token.start[0] == 'e' && token.start[1] == 'l' && token.start[2] == 's' && token.start[3] == 'e')
@@ -507,6 +511,7 @@ typedef enum thrive_ast_kind
     THRIVE_AST_UNARY,   /* -a */
     THRIVE_AST_TERNARY, /* 1 > a ? 1 : 0 */
     THRIVE_AST_IF,
+    THRIVE_AST_FOR,
     THRIVE_AST_RETURN,
     THRIVE_AST_ASSIGN,
     THRIVE_AST_DECL,
@@ -564,6 +569,14 @@ struct thrive_ast
             thrive_ast *then_branch;
             thrive_ast *else_branch; /* can be NULL */
         } if_stmt;
+
+        struct
+        {
+            thrive_ast *init; /* i = 0 */
+            thrive_ast *cond; /* i < 10 */
+            thrive_ast *step; /* i ++ */
+            thrive_ast *body; /* { code } */
+        } for_loop;
 
         struct
         {
@@ -763,6 +776,12 @@ THRIVE_API i32 thrive_ast_infix_bp(thrive_token_kind op, i32 *l_bp, i32 *r_bp)
         *r_bp = 101;
         return 1;
 
+    case THRIVE_TOKEN_KIND_INC:
+    case THRIVE_TOKEN_KIND_DEC:
+        *l_bp = 120;
+        *r_bp = 121;
+        return 1;
+
     default:
         return 0;
     }
@@ -811,7 +830,15 @@ THRIVE_API thrive_ast *thrive_ast_parse_expr_bp(thrive_state *state, i32 min_bp)
 
         thrive_token_next(state);
 
-        if (op == THRIVE_TOKEN_KIND_QUESTION)
+        if (op == THRIVE_TOKEN_KIND_INC || op == THRIVE_TOKEN_KIND_DEC)
+        {
+            thrive_ast *node = thrive_ast_new();
+            node->kind = THRIVE_AST_UNARY;
+            node->data.unary.op = op;
+            node->data.unary.expr = left;
+            left = node;
+        }
+        else if (op == THRIVE_TOKEN_KIND_QUESTION)
         {
             thrive_ast *then_expr = thrive_ast_parse_expr_bp(state, 0);
             thrive_ast *else_expr;
@@ -1062,6 +1089,51 @@ THRIVE_API thrive_ast *thrive_ast_parse_statement(thrive_state *state)
         return node;
     }
 
+    if (thrive_token_accept(state, THRIVE_TOKEN_KIND_KEYWORD_FOR))
+    {
+        thrive_ast *node = thrive_ast_new();
+        node->kind = THRIVE_AST_FOR;
+
+        if (!thrive_token_expect(state, THRIVE_TOKEN_KIND_LPARAN))
+            return 0;
+
+        /* 1. Initialization (e.g., i = 0) */
+        node->data.for_loop.init = thrive_ast_parse_expr(state);
+        if (!thrive_token_expect(state, THRIVE_TOKEN_KIND_COLON)) /* ':' as separator */
+        {
+            THRIVE_ERROR(state, "Expected ':' after for-init");
+            return 0;
+        }
+
+        /* 2. Condition (e.g., i < 10) */
+        node->data.for_loop.cond = thrive_ast_parse_expr(state);
+        if (!thrive_token_expect(state, THRIVE_TOKEN_KIND_COLON))
+        {
+            THRIVE_ERROR(state, "Expected ':' after for-condition");
+            return 0;
+        }
+
+        /* 3. Step/Increment (e.g., i ++) */
+        node->data.for_loop.step = thrive_ast_parse_expr(state);
+
+        if (!thrive_token_expect(state, THRIVE_TOKEN_KIND_RPARAN))
+            return 0;
+
+        thrive_token_skip_newlines(state);
+
+        /* 4. Body */
+        if (state->current.kind == THRIVE_TOKEN_KIND_LBRACE)
+        {
+            node->data.for_loop.body = thrive_ast_parse_block_stmt(state);
+        }
+        else
+        {
+            node->data.for_loop.body = thrive_ast_parse_statement(state);
+        }
+
+        return node;
+    }
+
     {
         thrive_ast *expr = thrive_ast_parse_expr(state);
         thrive_token_skip_newlines(state);
@@ -1081,6 +1153,13 @@ THRIVE_API thrive_ast *thrive_ast_parse_program(thrive_state *state)
     while (state->current.kind != THRIVE_TOKEN_KIND_EOF)
     {
         thrive_ast *stmt;
+
+        thrive_token_skip_newlines(state);
+
+        if (state->current.kind == THRIVE_TOKEN_KIND_EOF)
+        {
+            break;
+        }
 
         if (THRIVE_HAS_ERROR(state))
         {
@@ -1194,6 +1273,17 @@ THRIVE_API thrive_ast *thrive_ast_fold(thrive_ast *node)
 
     case THRIVE_AST_RETURN:
         node->data.ret.expr = thrive_ast_fold(node->data.ret.expr);
+        return node;
+
+    case THRIVE_AST_FOR:
+        if (node->data.for_loop.init)
+            node->data.for_loop.init = thrive_ast_fold(node->data.for_loop.init);
+        if (node->data.for_loop.cond)
+            node->data.for_loop.cond = thrive_ast_fold(node->data.for_loop.cond);
+        if (node->data.for_loop.step)
+            node->data.for_loop.step = thrive_ast_fold(node->data.for_loop.step);
+        if (node->data.for_loop.body)
+            node->data.for_loop.body = thrive_ast_fold(node->data.for_loop.body);
         return node;
 
     case THRIVE_AST_BLOCK:
