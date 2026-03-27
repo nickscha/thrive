@@ -283,6 +283,8 @@ THRIVE_API THRIVE_INLINE void thrive_token_next(thrive_state *state)
 {
     thrive_token token = {0};
 
+repeat:
+    token.kind = THRIVE_TOKEN_KIND_INVALID;
     token.start = state->source_code;
     token.line = state->line;
     token.column = state->column;
@@ -290,6 +292,7 @@ THRIVE_API THRIVE_INLINE void thrive_token_next(thrive_state *state)
     if (!*state->source_code)
     {
         token.kind = THRIVE_TOKEN_KIND_EOF;
+        token.end = state->source_code;
         state->current = token;
         return;
     }
@@ -300,19 +303,17 @@ THRIVE_API THRIVE_INLINE void thrive_token_next(thrive_state *state)
         /* Whitespaces */
         case ' ': case '\r': case '\t': case '\v': case '\f': case '\a':
         {
-            while (*state->source_code == ' '  || 
-                   *state->source_code == '\r' || 
-                   *state->source_code == '\t' ||
-                   *state->source_code == '\v' ||
-                   *state->source_code == '\f' ||
-                   *state->source_code == '\a'
-            ) {
+            do {
                 state->source_code++;
                 state->column++;
-            }
+            } while (*state->source_code == ' '  || 
+                     *state->source_code == '\r' || 
+                     *state->source_code == '\t' ||
+                     *state->source_code == '\v' ||
+                     *state->source_code == '\f' ||
+                     *state->source_code == '\a');
 
-            thrive_token_next(state);
-            return;
+            goto repeat;
         } 
         /* Line comments */
         case ';': 
@@ -322,8 +323,7 @@ THRIVE_API THRIVE_INLINE void thrive_token_next(thrive_state *state)
                 state->column++;
             }
             
-            thrive_token_next(state);
-            return;
+            goto repeat;  
         }
         /* Number processing */
         case '0': case '1': case '2': case '3': case '4': case '5': case '6':
@@ -353,6 +353,8 @@ THRIVE_API THRIVE_INLINE void thrive_token_next(thrive_state *state)
         case 'V': case 'W': case 'X': case 'Y': case 'Z':
         case '_':
         {
+            u32 token_length;
+
             while (thrive_char_is_alpha(*state->source_code) ||
                    thrive_char_is_digit(*state->source_code) ||
                    *state->source_code == '_') 
@@ -362,26 +364,24 @@ THRIVE_API THRIVE_INLINE void thrive_token_next(thrive_state *state)
             }
 
             token.kind = THRIVE_TOKEN_KIND_NAME;
+            token_length = (u32)(state->source_code - token.start);
 
+            switch (token_length)
             {
-                u32 token_length = (u32) (state->source_code - token.start);
-
-                if (thrive_string_equals("ret", token.start, token_length)) 
-                {
-                    token.kind = THRIVE_TOKEN_KIND_KEYWORD_RET;
-                } 
-                else if (thrive_string_equals("u32", token.start, token_length)) 
-                {
-                    token.kind = THRIVE_TOKEN_KIND_KEYWORD_U32;
-                } 
-                else if (thrive_string_equals("if", token.start, token_length)) 
-                {
-                    token.kind = THRIVE_TOKEN_KIND_KEYWORD_IF;
-                }
-                else if (thrive_string_equals("else", token.start, token_length)) 
-                {
-                    token.kind = THRIVE_TOKEN_KIND_KEYWORD_ELSE;
-                }
+                case 2:
+                    if (token.start[0] == 'i' && token.start[1] == 'f')
+                        token.kind = THRIVE_TOKEN_KIND_KEYWORD_IF;
+                    break;
+                case 3:
+                    if (token.start[0] == 'r' && token.start[1] == 'e' && token.start[2] == 't')
+                        token.kind = THRIVE_TOKEN_KIND_KEYWORD_RET;
+                    else if (token.start[0] == 'u' && token.start[1] == '3' && token.start[2] == '2')
+                        token.kind = THRIVE_TOKEN_KIND_KEYWORD_U32;
+                    break;
+                case 4:
+                    if (token.start[0] == 'e' && token.start[1] == 'l' && token.start[2] == 's' && token.start[3] == 'e')
+                        token.kind = THRIVE_TOKEN_KIND_KEYWORD_ELSE;
+                    break;
             }
 
             break;
