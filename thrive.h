@@ -512,6 +512,8 @@ typedef enum thrive_ast_kind
     THRIVE_AST_TERNARY, /* 1 > a ? 1 : 0 */
     THRIVE_AST_IF,
     THRIVE_AST_FOR,
+    THRIVE_AST_DEREF,
+    THRIVE_AST_ADDR_OF,
     THRIVE_AST_RETURN,
     THRIVE_AST_ASSIGN,
     THRIVE_AST_DECL,
@@ -686,15 +688,18 @@ THRIVE_API thrive_ast *thrive_ast_parse_primary(thrive_state *state)
 }
 
 /* Prefix binding powers (e.g., -a, !a) */
-THRIVE_API i32 thrive_ast_prefix_bp(thrive_token_kind op, i32 *r_bp)
+THRIVE_API i32 thrive_ast_prefix_bp(thrive_token_kind kind, i32 *r_bp)
 {
-    switch (op)
+    switch (kind)
     {
-    case THRIVE_TOKEN_KIND_SUB:
-    case THRIVE_TOKEN_KIND_ADD:
-    case THRIVE_TOKEN_KIND_NEGATE:
-    case THRIVE_TOKEN_KIND_NOT_BITWISE:
-        *r_bp = 110;
+    case THRIVE_TOKEN_KIND_SUB:         /* -i  */
+    case THRIVE_TOKEN_KIND_ADD:         /* +i  */
+    case THRIVE_TOKEN_KIND_NEGATE:      /* !i  */
+    case THRIVE_TOKEN_KIND_INC:         /* ++i */
+    case THRIVE_TOKEN_KIND_DEC:         /* --i */
+    case THRIVE_TOKEN_KIND_MUL:         /* *ptr */
+    case THRIVE_TOKEN_KIND_AND_BITWISE: /* &var */
+        *r_bp = 110;                    /* High priority */
         return 1;
     default:
         return 0;
@@ -795,17 +800,26 @@ THRIVE_API thrive_ast *thrive_ast_parse_expr_bp(thrive_state *state, i32 min_bp)
     if (thrive_ast_prefix_bp(state->current.kind, &p_rbp))
     {
         thrive_token_kind op = state->current.kind;
-        thrive_ast *node;
-
         thrive_token_next(state);
 
-        node = thrive_ast_new();
-        node->kind = THRIVE_AST_UNARY;
-        node->data.unary.op = op;
-        node->data.unary.expr = thrive_ast_parse_expr_bp(state, p_rbp);
-        THRIVE_CHECK_RET(state, 0);
+        left = thrive_ast_new();
 
-        left = node;
+        if (op == THRIVE_TOKEN_KIND_MUL)
+        {
+            left->kind = THRIVE_AST_DEREF;
+        }
+        else if (op == THRIVE_TOKEN_KIND_AND_BITWISE)
+        {
+            left->kind = THRIVE_AST_ADDR_OF;
+        }
+        else
+        {
+            left->kind = THRIVE_AST_UNARY;
+            left->data.unary.op = op;
+        }
+
+        left->data.unary.expr = thrive_ast_parse_expr_bp(state, p_rbp);
+        THRIVE_CHECK_RET(state, 0);
     }
     else
     {

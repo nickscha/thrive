@@ -277,6 +277,23 @@ void gen_expr(thrive_ast *node)
         break;
     }
 
+    case THRIVE_AST_ADDR_OF:
+    {
+        thrive_ast *target = node->data.unary.expr;
+        thrive_var *v = find_var(target->data.name.start, target->data.name.length);
+        printf("    lea rax, [rbp%d]\n", v->offset);
+        break;
+    }
+
+    case THRIVE_AST_DEREF:
+    {
+        /* *ptr -> Treat the value in the variable as an address */
+        gen_expr(node->data.unary.expr);
+
+        printf("    mov rax, [rax]\n");
+        break;
+    }
+
     default:
         break;
     }
@@ -555,6 +572,16 @@ THRIVE_API void thrive_ast_print(thrive_ast *node, u32 depth)
         break;
     }
 
+    case THRIVE_AST_ADDR_OF:
+        printf("ADDRESS_OF (&)\n");
+        thrive_ast_print(node->data.unary.expr, depth + 1);
+        break;
+
+    case THRIVE_AST_DEREF:
+        printf("DEREFERENCE (*)\n");
+        thrive_ast_print(node->data.unary.expr, depth + 1);
+        break;
+
     case THRIVE_AST_RETURN:
         printf("RETURN\n");
         thrive_ast_print(node->data.ret.expr, depth + 1);
@@ -601,6 +628,8 @@ int main(void)
 
     s8 *source_code =
         "u32 i = 1\n"
+        "u32 b = &i\n"
+        "u32 c = *&i\n"
         "\n"
         "for(i = 0 : i < 10 : i++) {\n"
         " i += 1\n"
