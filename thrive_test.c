@@ -19,7 +19,9 @@ static thrive_var vars[THRIVE_MAX_VARS];
 static u32 var_count = 0;
 static i32 stack_offset = 0;
 
-static int label_id = 0;
+static i32 label_id = 0;
+static i32 current_break_label = -1;
+static i32 current_continue_label = -1;
 
 i32 new_label(void)
 {
@@ -303,6 +305,28 @@ void gen_expr(thrive_ast *node)
         break;
     }
 
+    case THRIVE_AST_BREAK:
+    {
+        if (current_break_label == -1)
+        {
+            /* Error: Break used outside of loop */
+            return;
+        }
+        printf("    jmp .L%d\n", current_break_label);
+        break;
+    }
+
+    case THRIVE_AST_CONTINUE:
+    {
+        if (current_continue_label == -1)
+        {
+            /* Error: Continue used outside of loop */
+            return;
+        }
+        printf("    jmp .L%d\n", current_continue_label);
+        break;
+    }
+
     default:
         break;
     }
@@ -368,36 +392,42 @@ void gen_stmt(thrive_ast *node)
     }
     case THRIVE_AST_FOR:
     {
-        i32 l_start = new_label();
-        i32 l_end = new_label();
+        i32 start_label = new_label();
+        i32 step_label = new_label();
+        i32 end_label = new_label();
 
-        if (node->data.for_loop.init)
-        {
-            gen_expr(node->data.for_loop.init);
-        }
+        /* Save parent loop context */
+        i32 old_break = current_break_label;
+        i32 old_continue = current_continue_label;
 
-        printf(".L%d:\n", l_start);
+        /* Set current loop context for children */
+        current_break_label = end_label;
+        current_continue_label = step_label;
 
-        /* 2. Condition: i < 10 */
-        if (node->data.for_loop.cond)
-        {
-            gen_expr(node->data.for_loop.cond);
-            printf("    cmp rax, 0\n");
-            printf("    je .L%d\n", l_end);
-        }
+        /* 1. Init */
+        gen_expr(node->data.for_loop.init);
 
-        if (node->data.for_loop.body)
-        {
-            gen_stmt(node->data.for_loop.body);
-        }
+        printf(".L%d:\n", start_label);
 
-        if (node->data.for_loop.step)
-        {
-            gen_expr(node->data.for_loop.step);
-        }
+        /* 2. Condition */
+        gen_expr(node->data.for_loop.cond);
+        printf("    test rax, rax\n");
+        printf("    jz .L%d\n", end_label);
 
-        printf("    jmp .L%d\n", l_start);
-        printf(".L%d:\n", l_end);
+        /* 3. Body */
+        gen_stmt(node->data.for_loop.body);
+
+        /* 4. Step (Continue jumps here!) */
+        printf(".L%d:\n", step_label);
+        gen_expr(node->data.for_loop.step);
+        printf("    jmp .L%d\n", start_label);
+
+        /* 5. End (Break jumps here!) */
+        printf(".L%d:\n", end_label);
+
+        /* Restore parent context */
+        current_break_label = old_break;
+        current_continue_label = old_continue;
         break;
     }
     case THRIVE_AST_BLOCK:
@@ -596,6 +626,14 @@ THRIVE_API void thrive_ast_print(thrive_ast *node, u32 depth)
         thrive_ast_print(node->data.ret.expr, depth + 1);
         break;
 
+    case THRIVE_AST_BREAK:
+        printf("BREAK\n");
+        break;
+
+    case THRIVE_AST_CONTINUE:
+        printf("CONTINUE\n");
+        break;
+
     case THRIVE_AST_ASSIGN:
         printf("ASSIGN\n");
         thrive_ast_print(node->data.assign.left, depth + 1);
@@ -638,6 +676,7 @@ int main(void)
     s8 *source_code =
         "u32  i = 1\n"
         "for(i = 0 : i < 10 : ++i) {\n"
+        " continue\n"
         " i += 1\n"
         "}\n"
         "ret i\n";

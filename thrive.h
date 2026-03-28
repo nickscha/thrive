@@ -25,8 +25,42 @@ LANGUAGE SPECIFICATON (WIP)
   Keywords:
     - ret ; Return
     - ext ; External Function
-    - ldb ; Load binary file
-    - ldc ; Load code file
+    - if/else
+    - for
+    - break
+    - continue
+
+SYNTAX (WIP)
+
+  u32 a = 10
+  u32 b = 0
+  u32 i
+
+  if (a > 5)
+    a = 5
+    b = 1
+  else
+    a = 3
+
+  ; for loop example
+  for (i = 0 : i < 10 : i++)
+    a += 1
+    b += 1
+
+    if (a > 7)
+      break
+
+  ; function declaration
+  u32 sum(u32 a, u32 b)
+    u32 result
+    result = a + b
+    ret result
+
+  ; function call
+  u32 res = sum(a, b)
+
+
+
 
 LICENSE
 
@@ -204,6 +238,8 @@ typedef enum thrive_token_kind
     THRIVE_TOKEN_KIND_KEYWORD_IF,
     THRIVE_TOKEN_KIND_KEYWORD_ELSE,
     THRIVE_TOKEN_KIND_KEYWORD_FOR,
+    THRIVE_TOKEN_KIND_KEYWORD_BREAK,
+    THRIVE_TOKEN_KIND_KEYWORD_CONTINUE,
     THRIVE_TOKEN_KIND_INVALID
 
 } thrive_token_kind;
@@ -248,6 +284,8 @@ s8 *thrive_token_kind_names[] = {
     "KW_IF",
     "KW_ELSE",
     "KW_FOR",
+    "KW_BREAK",
+    "KW_CONTINUE",
     "INVALID"};
 
 typedef struct thrive_token
@@ -386,6 +424,15 @@ repeat:
                     if (token.start[0] == 'e' && token.start[1] == 'l' && token.start[2] == 's' && token.start[3] == 'e')
                         token.kind = THRIVE_TOKEN_KIND_KEYWORD_ELSE;
                     break;
+                case 5:
+                    if (token.start[0] == 'b' && token.start[1] == 'r' && token.start[2] == 'e' && token.start[3] == 'a'  && token.start[4] == 'k')
+                        token.kind = THRIVE_TOKEN_KIND_KEYWORD_BREAK;
+                    break;
+                case 8:
+                    if (token.start[0] == 'c' && token.start[1] == 'o' && token.start[2] == 'n' && token.start[3] == 't' &&
+                        token.start[4] == 'i' && token.start[5] == 'n' && token.start[6] == 'u' && token.start[7] == 'e')
+                        token.kind = THRIVE_TOKEN_KIND_KEYWORD_CONTINUE;
+                    break;
             }
 
             break;
@@ -512,6 +559,8 @@ typedef enum thrive_ast_kind
     THRIVE_AST_TERNARY, /* 1 > a ? 1 : 0 */
     THRIVE_AST_IF,
     THRIVE_AST_FOR,
+    THRIVE_AST_BREAK,
+    THRIVE_AST_CONTINUE,
     THRIVE_AST_DEREF,
     THRIVE_AST_ADDR_OF,
     THRIVE_AST_RETURN,
@@ -1033,7 +1082,7 @@ THRIVE_API thrive_ast *thrive_ast_parse_statement(thrive_state *state)
             is_pointer = 1;
         }
 
-        (void) is_pointer;
+        (void)is_pointer;
 
         name_tok = state->current;
 
@@ -1111,6 +1160,20 @@ THRIVE_API thrive_ast *thrive_ast_parse_statement(thrive_state *state)
             }
         }
 
+        return node;
+    }
+
+    if (thrive_token_accept(state, THRIVE_TOKEN_KIND_KEYWORD_BREAK))
+    {
+        thrive_ast *node = thrive_ast_new();
+        node->kind = THRIVE_AST_BREAK;
+        return node;
+    }
+
+    if (thrive_token_accept(state, THRIVE_TOKEN_KIND_KEYWORD_CONTINUE))
+    {
+        thrive_ast *node = thrive_ast_new();
+        node->kind = THRIVE_AST_CONTINUE;
         return node;
     }
 
