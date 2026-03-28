@@ -1372,6 +1372,48 @@ THRIVE_API thrive_ast *thrive_ast_fold(thrive_ast *node)
         node->data.assign.right = thrive_ast_fold(node->data.assign.right);
         return node;
 
+    case THRIVE_AST_IF:
+    {
+        node->data.if_stmt.cond = thrive_ast_fold(node->data.if_stmt.cond);
+
+        if (node->data.if_stmt.cond->kind == THRIVE_AST_INT)
+        {
+            if (node->data.if_stmt.cond->data.int_value != 0)
+            {
+                return thrive_ast_fold(node->data.if_stmt.then_branch);
+            }
+            else
+            {
+                return thrive_ast_fold(node->data.if_stmt.else_branch);
+            }
+        }
+
+        node->data.if_stmt.then_branch = thrive_ast_fold(node->data.if_stmt.then_branch);
+        node->data.if_stmt.else_branch = thrive_ast_fold(node->data.if_stmt.else_branch);
+        return node;
+    }
+
+    case THRIVE_AST_TERNARY:
+    {
+        node->data.ternary.cond = thrive_ast_fold(node->data.ternary.cond);
+
+        if (node->data.ternary.cond->kind == THRIVE_AST_INT)
+        {
+            if (node->data.ternary.cond->data.int_value != 0)
+            {
+                return thrive_ast_fold(node->data.ternary.then_expr);
+            }
+            else
+            {
+                return thrive_ast_fold(node->data.ternary.else_expr);
+            }
+        }
+
+        node->data.ternary.then_expr = thrive_ast_fold(node->data.ternary.then_expr);
+        node->data.ternary.else_expr = thrive_ast_fold(node->data.ternary.else_expr);
+        return node;
+    }
+
     case THRIVE_AST_DECL:
         if (node->data.decl.value)
         {
