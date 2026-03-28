@@ -1021,10 +1021,21 @@ THRIVE_API thrive_ast *thrive_ast_parse_statement(thrive_state *state)
     /* declaration: u32 a = expr */
     if (thrive_token_accept(state, THRIVE_TOKEN_KIND_KEYWORD_U32))
     {
-        thrive_token name_tok = state->current;
+        thrive_token name_tok;
         thrive_ast *name;
         thrive_ast *value;
         thrive_ast *node;
+
+        u8 is_pointer = 0;
+
+        if (thrive_token_accept(state, THRIVE_TOKEN_KIND_MUL))
+        {
+            is_pointer = 1;
+        }
+
+        (void) is_pointer;
+
+        name_tok = state->current;
 
         if (!thrive_token_expect(state, THRIVE_TOKEN_KIND_NAME))
         {

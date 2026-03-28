@@ -265,15 +265,25 @@ void gen_expr(thrive_ast *node)
 
     case THRIVE_AST_ASSIGN:
     {
-        thrive_ast *name = node->data.assign.left;
-        thrive_ast *value = node->data.assign.right;
+        thrive_ast *left = node->data.assign.left;
+        thrive_ast *right = node->data.assign.right;
 
-        gen_expr(value);
-
-        thrive_var *v = find_var(name->data.name.start, name->data.name.length);
-
-        printf("    mov [rbp%d], rax\n", v->offset);
-
+        if (left->kind == THRIVE_AST_DEREF)
+        {
+            /* Case: *p = 10 */
+            gen_expr(right);                 /* rax = 10 */
+            printf("    push rax\n");        /* save 10 */
+            gen_expr(left->data.unary.expr); /* rax = address in p */
+            printf("    pop rbx\n");         /* rbx = 10 */
+            printf("    mov [rax], rbx\n");  /* store 10 at address in rax */
+        }
+        else
+        {
+            /* Case: i = 10 */
+            gen_expr(right);
+            thrive_var *v = find_var(left->data.name.start, left->data.name.length);
+            printf("    mov [rbp%d], rax\n", v->offset);
+        }
         break;
     }
 
@@ -289,7 +299,6 @@ void gen_expr(thrive_ast *node)
     {
         /* *ptr -> Treat the value in the variable as an address */
         gen_expr(node->data.unary.expr);
-
         printf("    mov rax, [rax]\n");
         break;
     }
@@ -627,9 +636,23 @@ int main(void)
 {
 
     s8 *source_code =
-        "u32 i = 1\n"
-        "u32 b = &i\n"
-        "u32 c = *&i\n"
+        "u32  i = 1\n"
+        "for(i = 0 : i < 10 : ++i) {\n"
+        " i += 1\n"
+        "}\n"
+        "ret i\n";
+
+    /*
+    s8 *source_code =
+        "u32  i = 1\n"
+        "u32 *b = &i\n"
+        "u32  c = *&i\n"
+        "ret c\n";
+
+    s8 *source_code =
+        "u32  i = 1\n"
+        "u32 *b = &i\n"
+        "u32  c = *&i\n"
         "\n"
         "for(i = 0 : i < 10 : i++) {\n"
         " i += 1\n"
@@ -637,7 +660,6 @@ int main(void)
         "\n"
         "ret i\n";
 
-    /*
     s8 *source_code =
         "; this is a line comment\n"
         "u32 a\n"
