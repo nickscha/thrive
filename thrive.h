@@ -1348,6 +1348,26 @@ THRIVE_API thrive_ast *thrive_ast_fold(thrive_ast *node)
         return node;
     }
 
+    case THRIVE_AST_UNARY:
+        node->data.unary.expr = thrive_ast_fold(node->data.unary.expr);
+        if (node->data.unary.expr->kind == THRIVE_AST_INT)
+        {
+            u32 val = node->data.unary.expr->data.int_value;
+            if (node->data.unary.op == THRIVE_TOKEN_KIND_SUB)
+            {
+                node->kind = THRIVE_AST_INT;
+                node->data.int_value = (u32)(-(i32)val);
+                return node;
+            }
+            if (node->data.unary.op == THRIVE_TOKEN_KIND_NEGATE)
+            {
+                node->kind = THRIVE_AST_INT;
+                node->data.int_value = (val == 0) ? 1 : 0;
+                return node;
+            }
+        }
+        return node;
+
     case THRIVE_AST_ASSIGN:
         node->data.assign.right = thrive_ast_fold(node->data.assign.right);
         return node;
