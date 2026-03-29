@@ -794,12 +794,15 @@ int main(void)
 {
 
     s8 *source_code =
-        "u32 sum(u32 a : u32 b) {\n"
-        "  a + b\n"
+        "u32 mul(u32 a : u32 b) {\n"
+        " a * b\n"
         "}\n"
         "\n"
-        "u32 res = sum(10 : 20)\n"
-        "ret res\n";
+        "u32 add(u32 a : u32 b) {\n"
+        " a + b\n"
+        "}\n"
+        "\n"
+        "ret mul(add(1 : 3) : 2)";
 
     /*
     s8 *source_code =
