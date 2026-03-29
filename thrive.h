@@ -199,6 +199,8 @@ typedef enum thrive_token_kind
     THRIVE_TOKEN_KIND_RPARAN,      /* ) */
     THRIVE_TOKEN_KIND_LBRACE,      /* { */
     THRIVE_TOKEN_KIND_RBRACE,      /* } */
+    THRIVE_TOKEN_KIND_LBRACKET,    /* [ */
+    THRIVE_TOKEN_KIND_RBRACKET,    /* ] */
     THRIVE_TOKEN_KIND_ASSIGN,      /* = */
     THRIVE_TOKEN_KIND_NEGATE,      /* ! */
     THRIVE_TOKEN_KIND_ADD,         /* + */
@@ -248,6 +250,8 @@ s8 *thrive_token_kind_names[] = {
     "RPARAN",
     "LBRACE",
     "RBRACE",
+    "LBRACKET",
+    "RBRACKET",
     "ASSIGN",
     "NEGATE",
     "ADD",
