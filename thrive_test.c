@@ -18,10 +18,17 @@ typedef struct
 static thrive_var vars[THRIVE_MAX_VARS];
 static u32 var_count = 0;
 static i32 stack_offset = 0;
+static i32 in_function = 0;
 
 static i32 label_id = 0;
 static i32 current_break_label = -1;
 static i32 current_continue_label = -1;
+
+void reset_locals(void)
+{
+    var_count = 0;
+    stack_offset = 0;
+}
 
 i32 new_label(void)
 {
@@ -327,6 +334,28 @@ void gen_expr(thrive_ast *node)
         break;
     }
 
+    case THRIVE_AST_FUNC_CALL:
+    {
+        u32 i;
+        s8 *arg_regs[] = {"rcx", "rdx", "r8", "r9"};
+
+        for (i = 0; i < node->data.func_call.arg_count; ++i)
+        {
+            gen_expr(node->data.func_call.args[i]);
+            printf("    push rax\n");
+        }
+
+        for (i = node->data.func_call.arg_count; i > 0; --i)
+        {
+            printf("    pop %s\n", arg_regs[i - 1]);
+        }
+
+        printf("    call %.*s\n",
+               node->data.func_call.name->data.name.length,
+               node->data.func_call.name->data.name.start);
+        break;
+    }
+
     default:
         break;
     }
@@ -351,15 +380,7 @@ void gen_stmt(thrive_ast *node)
 
         break;
     }
-    case THRIVE_AST_RETURN:
-    {
-        gen_expr(node->data.ret.expr);
 
-        printf("    mov rcx, rax\n"); /* argument */
-        printf("    call ExitProcess\n");
-
-        break;
-    }
     case THRIVE_AST_IF:
     {
         int l_else = new_label();
@@ -440,6 +461,52 @@ void gen_stmt(thrive_ast *node)
         }
         break;
     }
+
+    case THRIVE_AST_FUNC_DECL:
+    {
+        u32 i;
+        s8 *arg_regs[] = {"rcx", "rdx", "r8", "r9"};
+
+        printf("\n%.*s:\n", node->data.func_decl.name->data.name.length, node->data.func_decl.name->data.name.start);
+        printf("    push rbp\n");
+        printf("    mov rbp, rsp\n");
+        printf("    sub rsp, 256\n");
+
+        reset_locals();
+        in_function = 1;
+
+        for (i = 0; i < node->data.func_decl.param_count; ++i)
+        {
+            thrive_ast *p_name = node->data.func_decl.params[i];
+            thrive_var *v = add_var(p_name->data.name.start, p_name->data.name.length);
+            printf("    mov [rbp%d], %s\n", v->offset, arg_regs[i]);
+        }
+
+        gen_stmt(node->data.func_decl.body);
+
+        printf("    leave\n");
+        printf("    ret\n");
+
+        in_function = 0;
+        break;
+    }
+    case THRIVE_AST_RETURN:
+    {
+        gen_expr(node->data.ret.expr);
+
+        if (in_function)
+        {
+            printf("    leave\n");
+            printf("    ret\n");
+        }
+        else
+        {
+            printf("    mov rcx, rax\n");
+            printf("    call ExitProcess\n");
+        }
+        break;
+    }
+
     default:
         gen_expr(node);
         break;
@@ -452,20 +519,31 @@ void gen_program(thrive_ast *node)
 
     printf("default rel\n");
     printf("extern ExitProcess\n\n");
-
     printf("section .text\n");
     printf("global main\n\n");
-
     printf("main:\n");
-
-    /* prologue */
     printf("    push rbp\n");
     printf("    mov rbp, rsp\n");
-    printf("    sub rsp, 32\n"); /* shadow space */
+    printf("    sub rsp, 256\n");
 
+    reset_locals();
+
+    /* 1. Generate all non-function statements inside main */
     for (i = 0; i < node->data.block.count; ++i)
     {
-        gen_stmt(node->data.block.items[i]);
+        if (node->data.block.items[i]->kind != THRIVE_AST_FUNC_DECL)
+        {
+            gen_stmt(node->data.block.items[i]);
+        }
+    }
+
+    /* 2. Generate function declarations outside of main */
+    for (i = 0; i < node->data.block.count; ++i)
+    {
+        if (node->data.block.items[i]->kind == THRIVE_AST_FUNC_DECL)
+        {
+            gen_stmt(node->data.block.items[i]);
+        }
     }
 }
 
@@ -660,6 +738,48 @@ THRIVE_API void thrive_ast_print(thrive_ast *node, u32 depth)
         break;
     }
 
+    case THRIVE_AST_FUNC_DECL:
+    {
+        u32 i;
+        printf("FUNC_DECL %.*s\n",
+               node->data.func_decl.name->data.name.length,
+               node->data.func_decl.name->data.name.start);
+
+        if (node->data.func_decl.param_count > 0)
+        {
+            thrive_print_indent(depth + 1);
+            printf("PARAMS:\n");
+            for (i = 0; i < node->data.func_decl.param_count; ++i)
+            {
+                thrive_ast_print(node->data.func_decl.params[i], depth + 2);
+            }
+        }
+
+        thrive_print_indent(depth + 1);
+        printf("BODY:\n");
+        thrive_ast_print(node->data.func_decl.body, depth + 2);
+        break;
+    }
+
+    case THRIVE_AST_FUNC_CALL:
+    {
+        u32 i;
+        printf("FUNC_CALL %.*s\n",
+               node->data.func_call.name->data.name.length,
+               node->data.func_call.name->data.name.start);
+
+        if (node->data.func_call.arg_count > 0)
+        {
+            thrive_print_indent(depth + 1);
+            printf("ARGS:\n");
+            for (i = 0; i < node->data.func_call.arg_count; ++i)
+            {
+                thrive_ast_print(node->data.func_call.args[i], depth + 2);
+            }
+        }
+        break;
+    }
+
     default:
         printf("UNKNOWN AST\n");
         break;
@@ -674,6 +794,15 @@ int main(void)
 {
 
     s8 *source_code =
+        "u32 sum(u32 a : u32 b) {\n"
+        "  a + b\n"
+        "}\n"
+        "\n"
+        "u32 res = sum(10 : 20)\n"
+        "ret res\n";
+
+    /*
+    s8 *source_code =
         "u32  i = 1\n"
         "for(i = 0 : i < 10 : ++i) {\n"
         " continue\n"
@@ -681,7 +810,6 @@ int main(void)
         "}\n"
         "ret i\n";
 
-    /*
     s8 *source_code =
         "u32  i = 1\n"
         "u32 *b = &i\n"

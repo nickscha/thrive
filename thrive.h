@@ -569,7 +569,9 @@ typedef enum thrive_ast_kind
     THRIVE_AST_RETURN,
     THRIVE_AST_ASSIGN,
     THRIVE_AST_DECL,
-    THRIVE_AST_BLOCK
+    THRIVE_AST_BLOCK,
+    THRIVE_AST_FUNC_DECL,
+    THRIVE_AST_FUNC_CALL
 
 } thrive_ast_kind;
 
@@ -649,6 +651,21 @@ struct thrive_ast
             thrive_ast *value;
         } decl;
 
+        struct
+        {
+            thrive_ast *name;
+            thrive_ast *params[8];
+            u32 param_count;
+            thrive_ast *body;
+        } func_decl;
+
+        struct
+        {
+            thrive_ast *name;
+            thrive_ast *args[8];
+            u32 arg_count;
+        } func_call;
+
         thrive_ast_block block;
 
     } data;
@@ -716,6 +733,42 @@ THRIVE_API thrive_ast *thrive_ast_parse_primary(thrive_state *state)
         node->data.name.length = (u32)(tok.end - tok.start);
 
         thrive_token_next(state);
+
+        /* function call parsing */
+        if (thrive_token_accept(state, THRIVE_TOKEN_KIND_LPARAN))
+        {
+            thrive_ast *call_node = thrive_ast_new(state);
+            THRIVE_CHECK_RET(state, 0);
+
+            call_node->kind = THRIVE_AST_FUNC_CALL;
+            call_node->data.func_call.name = node;
+            call_node->data.func_call.arg_count = 0;
+
+            while (state->current.kind != THRIVE_TOKEN_KIND_RPARAN &&
+                   state->current.kind != THRIVE_TOKEN_KIND_EOF)
+            {
+                if (call_node->data.func_call.arg_count >= 8)
+                {
+                    THRIVE_ERROR(state, "Too many arguments");
+                    return 0;
+                }
+
+                call_node->data.func_call.args[call_node->data.func_call.arg_count++] = thrive_ast_parse_expr(state);
+
+                if (!thrive_token_accept(state, THRIVE_TOKEN_KIND_COLON))
+                {
+                    break;
+                }
+            }
+
+            if (!thrive_token_expect(state, THRIVE_TOKEN_KIND_RPARAN))
+            {
+                THRIVE_ERROR(state, "Expected ')' after arguments");
+                return 0;
+            }
+            return call_node;
+        }
+
         return node;
     }
 
@@ -1087,21 +1140,18 @@ THRIVE_API thrive_ast *thrive_ast_parse_statement(thrive_state *state)
         return node;
     }
 
-    /* declaration: u32 a = expr */
+    /* declaration: u32 a = expr OR u32 func(u32 a : u32 b) */
     if (thrive_token_accept(state, THRIVE_TOKEN_KIND_KEYWORD_U32))
     {
         thrive_token name_tok;
         thrive_ast *name;
-        thrive_ast *value;
         thrive_ast *node;
-
         u8 is_pointer = 0;
 
         if (thrive_token_accept(state, THRIVE_TOKEN_KIND_MUL))
         {
             is_pointer = 1;
         }
-
         (void)is_pointer;
 
         name_tok = state->current;
@@ -1119,19 +1169,59 @@ THRIVE_API thrive_ast *thrive_ast_parse_statement(thrive_state *state)
         name->data.name.start = name_tok.start;
         name->data.name.length = (u32)(name_tok.end - name_tok.start);
 
-        value = 0;
+        /* function declaration */
+        if (thrive_token_accept(state, THRIVE_TOKEN_KIND_LPARAN))
+        {
+            node = thrive_ast_new(state);
+            THRIVE_CHECK_RET(state, 0);
+
+            node->kind = THRIVE_AST_FUNC_DECL;
+            node->data.func_decl.name = name;
+            node->data.func_decl.param_count = 0;
+
+            while (state->current.kind != THRIVE_TOKEN_KIND_RPARAN &&
+                   state->current.kind != THRIVE_TOKEN_KIND_EOF)
+            {
+                if (thrive_token_accept(state, THRIVE_TOKEN_KIND_KEYWORD_U32))
+                {
+                    thrive_token p_tok = state->current;
+                    thrive_ast *p_name = thrive_ast_new(state);
+
+                    if (!thrive_token_expect(state, THRIVE_TOKEN_KIND_NAME))
+                        return 0;
+
+                    p_name->kind = THRIVE_AST_NAME;
+                    p_name->data.name.start = p_tok.start;
+                    p_name->data.name.length = (u32)(p_tok.end - p_tok.start);
+
+                    node->data.func_decl.params[node->data.func_decl.param_count++] = p_name;
+                }
+
+                if (!thrive_token_accept(state, THRIVE_TOKEN_KIND_COLON))
+                {
+                    break;
+                }
+            }
+
+            if (!thrive_token_expect(state, THRIVE_TOKEN_KIND_RPARAN))
+                return 0;
+            thrive_token_skip_newlines(state);
+
+            node->data.func_decl.body = thrive_ast_parse_block_stmt(state);
+            return node;
+        }
+
+        /* Normal Variable Declaration */
+        node = thrive_ast_new(state);
+        THRIVE_CHECK_RET(state, 0);
+        node->kind = THRIVE_AST_DECL;
+        node->data.decl.name = name;
+        node->data.decl.value = 0;
 
         if (thrive_token_accept(state, THRIVE_TOKEN_KIND_ASSIGN))
         {
-            value = thrive_ast_parse_expr(state);
+            node->data.decl.value = thrive_ast_parse_expr(state);
         }
-
-        node = thrive_ast_new(state);
-        THRIVE_CHECK_RET(state, 0);
-
-        node->kind = THRIVE_AST_DECL;
-        node->data.decl.name = name;
-        node->data.decl.value = value;
 
         return node;
     }
@@ -1265,7 +1355,7 @@ THRIVE_API thrive_ast *thrive_ast_parse_program(thrive_state *state)
 {
     thrive_ast *node = thrive_ast_new(state);
     THRIVE_CHECK_RET(state, 0);
-    
+
     node->kind = THRIVE_AST_BLOCK;
     node->data.block.count = 0;
 
@@ -1477,6 +1567,23 @@ THRIVE_API thrive_ast *thrive_ast_fold(thrive_ast *node)
         for (i = 0; i < node->data.block.count; ++i)
         {
             node->data.block.items[i] = thrive_ast_fold(node->data.block.items[i]);
+        }
+        return node;
+    }
+
+    case THRIVE_AST_FUNC_DECL:
+        if (node->data.func_decl.body)
+        {
+            node->data.func_decl.body = thrive_ast_fold(node->data.func_decl.body);
+        }
+        return node;
+
+    case THRIVE_AST_FUNC_CALL:
+    {
+        u32 i;
+        for (i = 0; i < node->data.func_call.arg_count; ++i)
+        {
+            node->data.func_call.args[i] = thrive_ast_fold(node->data.func_call.args[i]);
         }
         return node;
     }
