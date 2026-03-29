@@ -59,9 +59,6 @@ SYNTAX (WIP)
   ; function call
   u32 res = sum(a, b)
 
-
-
-
 LICENSE
 
   Placed in the public domain and also MIT licensed.
