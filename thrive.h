@@ -232,6 +232,7 @@ typedef enum thrive_token_kind
 
     THRIVE_TOKEN_KIND_INT,
     THRIVE_TOKEN_KIND_NAME,
+    THRIVE_TOKEN_KIND_KEYWORD_EXT,
     THRIVE_TOKEN_KIND_KEYWORD_RET,
     THRIVE_TOKEN_KIND_KEYWORD_U32,
     THRIVE_TOKEN_KIND_KEYWORD_IF,
@@ -280,6 +281,7 @@ s8 *thrive_token_kind_names[] = {
     "COLON",
     "INT",
     "NAME",
+    "KW_EXT",
     "KW_RET",
     "KW_U32",
     "KW_IF",
@@ -420,6 +422,8 @@ repeat:
                         token.kind = THRIVE_TOKEN_KIND_KEYWORD_U32;
                     else if (token.start[0] == 'f' && token.start[1] == 'o' && token.start[2] == 'r')
                         token.kind = THRIVE_TOKEN_KIND_KEYWORD_FOR;
+                    else if (token.start[0] == 'e' && token.start[1] == 'x' && token.start[2] == 't')
+                        token.kind = THRIVE_TOKEN_KIND_KEYWORD_EXT;
                     break;
                 case 4:
                     if (token.start[0] == 'e' && token.start[1] == 'l' && token.start[2] == 's' && token.start[3] == 'e')
@@ -571,7 +575,8 @@ typedef enum thrive_ast_kind
     THRIVE_AST_DECL,
     THRIVE_AST_BLOCK,
     THRIVE_AST_FUNC_DECL,
-    THRIVE_AST_FUNC_CALL
+    THRIVE_AST_FUNC_CALL,
+    THRIVE_AST_EXT_DECL
 
 } thrive_ast_kind;
 
@@ -668,6 +673,13 @@ struct thrive_ast
             thrive_ast *args[THRIVE_FUNC_MAX_ARGS];
             u32 arg_count;
         } func_call;
+
+        struct
+        {
+            thrive_ast *name;
+            thrive_ast *params[THRIVE_FUNC_MAX_PARAMS];
+            u32 param_count;
+        } ext_decl;
 
         thrive_ast_block block;
 
@@ -1128,6 +1140,78 @@ THRIVE_API thrive_ast *thrive_ast_parse_statement(thrive_state *state)
     if (state->current.kind == THRIVE_TOKEN_KIND_LBRACE)
     {
         return thrive_ast_parse_block_stmt(state);
+    }
+
+    /* ext u32 Name(u32 a : u32 b) */
+    if (thrive_token_accept(state, THRIVE_TOKEN_KIND_KEYWORD_EXT))
+    {
+        thrive_token name_tok;
+
+        thrive_ast *node = thrive_ast_new(state);
+        THRIVE_CHECK_RET(state, 0);
+        node->kind = THRIVE_AST_EXT_DECL;
+        node->data.ext_decl.param_count = 0;
+
+        /* Skip return type for now */
+        if (!thrive_token_expect(state, THRIVE_TOKEN_KIND_KEYWORD_U32))
+        {
+            return 0;
+        }
+
+        name_tok = state->current;
+        if (!thrive_token_expect(state, THRIVE_TOKEN_KIND_NAME))
+        {
+            return 0;
+        }
+
+        node->data.ext_decl.name = thrive_ast_new(state);
+        node->data.ext_decl.name->kind = THRIVE_AST_NAME;
+        node->data.ext_decl.name->data.name.start = name_tok.start;
+        node->data.ext_decl.name->data.name.length = (u32)(name_tok.end - name_tok.start);
+
+        if (!thrive_token_expect(state, THRIVE_TOKEN_KIND_LPAREN))
+        {
+            return 0;
+        }
+
+        while (state->current.kind != THRIVE_TOKEN_KIND_RPAREN &&
+               state->current.kind != THRIVE_TOKEN_KIND_EOF)
+        {
+            thrive_token p_tok;
+            thrive_ast *p_node;
+
+            /* Skip parameter type for now */
+            if (!thrive_token_expect(state, THRIVE_TOKEN_KIND_KEYWORD_U32))
+            {
+                return 0;
+            }
+
+            p_tok = state->current;
+            if (!thrive_token_expect(state, THRIVE_TOKEN_KIND_NAME))
+            {
+                return 0;
+            }
+
+            p_node = thrive_ast_new(state);
+            THRIVE_CHECK_RET(state, 0);
+            p_node->kind = THRIVE_AST_NAME;
+            p_node->data.name.start = p_tok.start;
+            p_node->data.name.length = (u32)(p_tok.end - p_tok.start);
+
+            node->data.ext_decl.params[node->data.ext_decl.param_count++] = p_node;
+
+            if (!thrive_token_accept(state, THRIVE_TOKEN_KIND_COLON))
+            {
+                break;
+            }
+        }
+
+        if (!thrive_token_expect(state, THRIVE_TOKEN_KIND_RPAREN))
+        {
+            return 0;
+        }
+
+        return node;
     }
 
     /* return */

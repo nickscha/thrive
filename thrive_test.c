@@ -105,9 +105,9 @@ void gen_expr(thrive_ast *node)
             break;
 
         case THRIVE_TOKEN_KIND_DIV:
-            printf("    mov rdx, 0\n");
+            printf("    xor rdx, rdx\n");
             printf("    mov rcx, rax\n");
-            printf("    mov rax, rbx\n");
+            printf("    pop rax\n");
             printf("    idiv rcx\n");
             break;
 
@@ -350,9 +350,12 @@ void gen_expr(thrive_ast *node)
             printf("    pop %s\n", arg_regs[i - 1]);
         }
 
+        printf("    sub rsp, 32\n");
         printf("    call %.*s\n",
                node->data.func_call.name->data.name.length,
                node->data.func_call.name->data.name.start);
+        printf("    add rsp, 32\n");
+
         break;
     }
 
@@ -507,6 +510,12 @@ void gen_stmt(thrive_ast *node)
         break;
     }
 
+    case THRIVE_AST_EXT_DECL:
+    {
+        /* Do nothing here; handled in the top-level pass */
+        break;
+    }
+
     default:
         gen_expr(node);
         break;
@@ -518,8 +527,20 @@ void gen_program(thrive_ast *node)
     u32 i;
 
     printf("default rel\n");
-    printf("extern ExitProcess\n\n");
-    printf("section .text\n");
+    
+    /* Pass 1: Find and print all external declarations at the top */
+    for (i = 0; i < node->data.block.count; ++i)
+    {
+        thrive_ast *stmt = node->data.block.items[i];
+        if (stmt->kind == THRIVE_AST_EXT_DECL)
+        {
+            printf("extern %.*s\n",
+                   stmt->data.ext_decl.name->data.name.length,
+                   stmt->data.ext_decl.name->data.name.start);
+        }
+    }
+
+    printf("\nsection .text\n");
     printf("global main\n\n");
     printf("main:\n");
     printf("    push rbp\n");
@@ -528,16 +549,17 @@ void gen_program(thrive_ast *node)
 
     reset_locals();
 
-    /* 1. Generate all non-function statements inside main */
+    /* Pass 2: Main logic (Skip FUNC_DECL and EXT_DECL) */
     for (i = 0; i < node->data.block.count; ++i)
     {
-        if (node->data.block.items[i]->kind != THRIVE_AST_FUNC_DECL)
+        thrive_ast *stmt = node->data.block.items[i];
+        if (stmt->kind != THRIVE_AST_FUNC_DECL && stmt->kind != THRIVE_AST_EXT_DECL)
         {
-            gen_stmt(node->data.block.items[i]);
+            gen_stmt(stmt);
         }
     }
 
-    /* 2. Generate function declarations outside of main */
+    /* Pass 3: Internal Function Definitions */
     for (i = 0; i < node->data.block.count; ++i)
     {
         if (node->data.block.items[i]->kind == THRIVE_AST_FUNC_DECL)
@@ -780,6 +802,14 @@ THRIVE_API void thrive_ast_print(thrive_ast *node, u32 depth)
         break;
     }
 
+    case THRIVE_AST_EXT_DECL:
+    {
+        printf("EXT_DECL %.*s\n",
+               node->data.ext_decl.name->data.name.length,
+               node->data.ext_decl.name->data.name.start);
+        break;
+    }
+
     default:
         printf("UNKNOWN AST\n");
         break;
@@ -794,6 +824,7 @@ int main(void)
 {
 
     s8 *source_code =
+        "ext u32 ExitProcess(u32 uExitCode)\n"
         "u32 mul(u32 a : u32 b) {\n"
         " a * b\n"
         "}\n"
@@ -802,7 +833,8 @@ int main(void)
         " a + b\n"
         "}\n"
         "\n"
-        "ret mul(add(1 : 3) : 2)";
+        "u32 result = mul(add(1 : 3) : 2)\n"
+        "ExitProcess(result)\n";
 
     /*
     s8 *source_code =
