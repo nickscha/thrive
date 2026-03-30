@@ -578,6 +578,9 @@ typedef enum thrive_ast_kind
 typedef struct thrive_ast thrive_ast;
 
 #define THRIVE_BLOCK_MAX 256
+#define THRIVE_FUNC_MAX_PARAMS 8
+#define THRIVE_FUNC_MAX_ARGS 8
+#define THRIVE_AST_MAX 1024
 
 typedef struct thrive_ast_block
 {
@@ -654,7 +657,7 @@ struct thrive_ast
         struct
         {
             thrive_ast *name;
-            thrive_ast *params[8];
+            thrive_ast *params[THRIVE_FUNC_MAX_PARAMS];
             u32 param_count;
             thrive_ast *body;
         } func_decl;
@@ -662,7 +665,7 @@ struct thrive_ast
         struct
         {
             thrive_ast *name;
-            thrive_ast *args[8];
+            thrive_ast *args[THRIVE_FUNC_MAX_ARGS];
             u32 arg_count;
         } func_call;
 
@@ -670,8 +673,6 @@ struct thrive_ast
 
     } data;
 };
-
-#define THRIVE_AST_MAX 1024
 
 static thrive_ast thrive_ast_pool[THRIVE_AST_MAX];
 static u32 thrive_ast_count = 0;
