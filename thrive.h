@@ -195,8 +195,8 @@ typedef enum thrive_token_kind
 {
     THRIVE_TOKEN_KIND_EOF = 0,
     THRIVE_TOKEN_KIND_NEW_LINE,
-    THRIVE_TOKEN_KIND_LPARAN,      /* ( */
-    THRIVE_TOKEN_KIND_RPARAN,      /* ) */
+    THRIVE_TOKEN_KIND_LPAREN,      /* ( */
+    THRIVE_TOKEN_KIND_RPAREN,      /* ) */
     THRIVE_TOKEN_KIND_LBRACE,      /* { */
     THRIVE_TOKEN_KIND_RBRACE,      /* } */
     THRIVE_TOKEN_KIND_LBRACKET,    /* [ */
@@ -457,8 +457,8 @@ repeat:
 
         THRIVE_TOKEN_CASE_1('?',  THRIVE_TOKEN_KIND_QUESTION)
         THRIVE_TOKEN_CASE_1(':',  THRIVE_TOKEN_KIND_COLON   )
-        THRIVE_TOKEN_CASE_1('(',  THRIVE_TOKEN_KIND_LPARAN  )
-        THRIVE_TOKEN_CASE_1(')',  THRIVE_TOKEN_KIND_RPARAN  )
+        THRIVE_TOKEN_CASE_1('(',  THRIVE_TOKEN_KIND_LPAREN  )
+        THRIVE_TOKEN_CASE_1(')',  THRIVE_TOKEN_KIND_RPAREN  )
         THRIVE_TOKEN_CASE_1('{',  THRIVE_TOKEN_KIND_LBRACE  )
         THRIVE_TOKEN_CASE_1('}',  THRIVE_TOKEN_KIND_RBRACE  )
         THRIVE_TOKEN_CASE_1('[',  THRIVE_TOKEN_KIND_LBRACKET)
@@ -735,7 +735,7 @@ THRIVE_API thrive_ast *thrive_ast_parse_primary(thrive_state *state)
         thrive_token_next(state);
 
         /* function call parsing */
-        if (thrive_token_accept(state, THRIVE_TOKEN_KIND_LPARAN))
+        if (thrive_token_accept(state, THRIVE_TOKEN_KIND_LPAREN))
         {
             thrive_ast *call_node = thrive_ast_new(state);
             THRIVE_CHECK_RET(state, 0);
@@ -744,7 +744,7 @@ THRIVE_API thrive_ast *thrive_ast_parse_primary(thrive_state *state)
             call_node->data.func_call.name = node;
             call_node->data.func_call.arg_count = 0;
 
-            while (state->current.kind != THRIVE_TOKEN_KIND_RPARAN &&
+            while (state->current.kind != THRIVE_TOKEN_KIND_RPAREN &&
                    state->current.kind != THRIVE_TOKEN_KIND_EOF)
             {
                 if (call_node->data.func_call.arg_count >= 8)
@@ -761,7 +761,7 @@ THRIVE_API thrive_ast *thrive_ast_parse_primary(thrive_state *state)
                 }
             }
 
-            if (!thrive_token_expect(state, THRIVE_TOKEN_KIND_RPARAN))
+            if (!thrive_token_expect(state, THRIVE_TOKEN_KIND_RPAREN))
             {
                 THRIVE_ERROR(state, "Expected ')' after arguments");
                 return 0;
@@ -778,12 +778,12 @@ THRIVE_API thrive_ast *thrive_ast_parse_primary(thrive_state *state)
         return 0;
     }
 
-    if (thrive_token_accept(state, THRIVE_TOKEN_KIND_LPARAN))
+    if (thrive_token_accept(state, THRIVE_TOKEN_KIND_LPAREN))
     {
         thrive_ast *expr = thrive_ast_parse_expr(state);
         THRIVE_CHECK_RET(state, 0);
 
-        if (!thrive_token_expect(state, THRIVE_TOKEN_KIND_RPARAN))
+        if (!thrive_token_expect(state, THRIVE_TOKEN_KIND_RPAREN))
         {
             THRIVE_ERROR(state, "Expected ')'");
             return 0;
@@ -1170,7 +1170,7 @@ THRIVE_API thrive_ast *thrive_ast_parse_statement(thrive_state *state)
         name->data.name.length = (u32)(name_tok.end - name_tok.start);
 
         /* function declaration */
-        if (thrive_token_accept(state, THRIVE_TOKEN_KIND_LPARAN))
+        if (thrive_token_accept(state, THRIVE_TOKEN_KIND_LPAREN))
         {
             node = thrive_ast_new(state);
             THRIVE_CHECK_RET(state, 0);
@@ -1179,7 +1179,7 @@ THRIVE_API thrive_ast *thrive_ast_parse_statement(thrive_state *state)
             node->data.func_decl.name = name;
             node->data.func_decl.param_count = 0;
 
-            while (state->current.kind != THRIVE_TOKEN_KIND_RPARAN &&
+            while (state->current.kind != THRIVE_TOKEN_KIND_RPAREN &&
                    state->current.kind != THRIVE_TOKEN_KIND_EOF)
             {
                 if (thrive_token_accept(state, THRIVE_TOKEN_KIND_KEYWORD_U32))
@@ -1203,7 +1203,7 @@ THRIVE_API thrive_ast *thrive_ast_parse_statement(thrive_state *state)
                 }
             }
 
-            if (!thrive_token_expect(state, THRIVE_TOKEN_KIND_RPARAN))
+            if (!thrive_token_expect(state, THRIVE_TOKEN_KIND_RPAREN))
                 return 0;
             thrive_token_skip_newlines(state);
 
@@ -1233,7 +1233,7 @@ THRIVE_API thrive_ast *thrive_ast_parse_statement(thrive_state *state)
 
         node->kind = THRIVE_AST_IF;
 
-        if (!thrive_token_expect(state, THRIVE_TOKEN_KIND_LPARAN))
+        if (!thrive_token_expect(state, THRIVE_TOKEN_KIND_LPAREN))
         {
             THRIVE_ERROR(state, "Expected '(' after if");
             return 0;
@@ -1241,7 +1241,7 @@ THRIVE_API thrive_ast *thrive_ast_parse_statement(thrive_state *state)
 
         node->data.if_stmt.cond = thrive_ast_parse_expr(state);
 
-        if (!thrive_token_expect(state, THRIVE_TOKEN_KIND_RPARAN))
+        if (!thrive_token_expect(state, THRIVE_TOKEN_KIND_RPAREN))
         {
             THRIVE_ERROR(state, "Expected ')'");
             return 0;
@@ -1304,7 +1304,7 @@ THRIVE_API thrive_ast *thrive_ast_parse_statement(thrive_state *state)
 
         node->kind = THRIVE_AST_FOR;
 
-        if (!thrive_token_expect(state, THRIVE_TOKEN_KIND_LPARAN))
+        if (!thrive_token_expect(state, THRIVE_TOKEN_KIND_LPAREN))
             return 0;
 
         /* 1. Initialization (e.g., i = 0) */
@@ -1326,7 +1326,7 @@ THRIVE_API thrive_ast *thrive_ast_parse_statement(thrive_state *state)
         /* 3. Step/Increment (e.g., i ++) */
         node->data.for_loop.step = thrive_ast_parse_expr(state);
 
-        if (!thrive_token_expect(state, THRIVE_TOKEN_KIND_RPARAN))
+        if (!thrive_token_expect(state, THRIVE_TOKEN_KIND_RPAREN))
             return 0;
 
         thrive_token_skip_newlines(state);
