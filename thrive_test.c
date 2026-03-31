@@ -166,8 +166,8 @@ void gen_expr(thrive_ast *node)
 
         case THRIVE_TOKEN_KIND_AND_LOGICAL:
         {
-            int l_false = new_label();
-            int l_end = new_label();
+            i32 l_false = new_label();
+            i32 l_end = new_label();
 
             gen_expr(node->data.binary.left);
             printf("    cmp rax, 0\n");
@@ -189,8 +189,8 @@ void gen_expr(thrive_ast *node)
 
         case THRIVE_TOKEN_KIND_OR_LOGICAL:
         {
-            int l_true = new_label();
-            int l_end = new_label();
+            i32 l_true = new_label();
+            i32 l_end = new_label();
 
             gen_expr(node->data.binary.left);
             printf("    cmp rax, 0\n");

@@ -390,10 +390,17 @@ repeat:
             token.start = state->source_code; 
             
             while (*state->source_code && *state->source_code != '"') {
-                if (*state->source_code == '\n') { state->line++; state->column = 1; }
-                if (*state->source_code == '\\' && *(state->source_code + 1)) {
+
+                if (*state->source_code == '\n') 
+                {
+                    state->line++; state->column = 1; 
+                }
+
+                if (*state->source_code == '\\' && *(state->source_code + 1)) 
+                {
                     state->source_code++; state->column++;
                 }
+
                 state->source_code++; state->column++;
             }
             
@@ -413,8 +420,11 @@ repeat:
             u32 val = 0;
             state->source_code++; state->column++; /* Skip opening ' */
             
-            if (*state->source_code == '\\') {
-                state->source_code++; state->column++;
+            if (*state->source_code == '\\') 
+            {
+                state->source_code++; 
+                state->column++;
+                
                 switch (*state->source_code) {
                     case 'n': val = '\n'; break;
                     case 'r': val = '\r'; break;
@@ -422,12 +432,16 @@ repeat:
                     case '0': val = '\0'; break;
                     default:  val = (u32) *state->source_code; break;
                 }
-            } else {
+            } 
+            else 
+            {
                 val = (u32) *state->source_code;
             }
             
             state->source_code++; state->column++;
-            if (*state->source_code == '\'') {
+
+            if (*state->source_code == '\'')
+            {
                 state->source_code++; state->column++; /* Skip closing ' */
             }
             
@@ -596,56 +610,58 @@ repeat:
     state->current = token;
 }
 
-THRIVE_API u8 thrive_token_accept(thrive_state *s, thrive_token_kind kind)
+THRIVE_API u8 thrive_token_accept(thrive_state *state, thrive_token_kind kind)
 {
-    if (s->current.kind == kind)
+    if (state->current.kind == kind)
     {
-        thrive_token_next(s);
+        thrive_token_next(state);
         return 1;
     }
     return 0;
 }
 
-THRIVE_API u8 thrive_token_expect(thrive_state *s, thrive_token_kind kind)
+THRIVE_API u8 thrive_token_expect(thrive_state *state, thrive_token_kind kind)
 {
-    if (s->current.kind != kind)
+    if (state->current.kind != kind)
     {
-        THRIVE_ERROR(s, "Unexpected token. Expected a different token kind.");
+        THRIVE_ERROR(state, "Unexpected token. Expected a different token kind.");
         return 0;
     }
 
-    thrive_token_next(s);
+    thrive_token_next(state);
     return 1;
 }
 
-THRIVE_API u8 thrive_token_accept_type(thrive_state *s)
+THRIVE_API u8 thrive_token_accept_type(thrive_state *state)
 {
-    if (s->current.kind == THRIVE_TOKEN_KIND_KEYWORD_U32 ||
-        s->current.kind == THRIVE_TOKEN_KIND_KEYWORD_S8)
+    if (state->current.kind == THRIVE_TOKEN_KIND_KEYWORD_U32 ||
+        state->current.kind == THRIVE_TOKEN_KIND_KEYWORD_S8)
     {
-        thrive_token_next(s);
+        thrive_token_next(state);
         return 1;
     }
     return 0;
 }
 
-THRIVE_API u8 thrive_token_expect_type(thrive_state *s)
+THRIVE_API u8 thrive_token_expect_type(thrive_state *state)
 {
-    if (s->current.kind == THRIVE_TOKEN_KIND_KEYWORD_U32 ||
-        s->current.kind == THRIVE_TOKEN_KIND_KEYWORD_S8)
+    if (state->current.kind == THRIVE_TOKEN_KIND_KEYWORD_U32 ||
+        state->current.kind == THRIVE_TOKEN_KIND_KEYWORD_S8)
     {
-        thrive_token_next(s);
+        thrive_token_next(state);
         return 1;
     }
-    THRIVE_ERROR(s, "Expected type identifier");
+
+    THRIVE_ERROR(state, "Expected type identifier");
+
     return 0;
 }
 
-THRIVE_API void thrive_token_skip_newlines(thrive_state *s)
+THRIVE_API void thrive_token_skip_newlines(thrive_state *state)
 {
-    while (s->current.kind == THRIVE_TOKEN_KIND_NEW_LINE)
+    while (state->current.kind == THRIVE_TOKEN_KIND_NEW_LINE)
     {
-        thrive_token_next(s);
+        thrive_token_next(state);
     }
 }
 
