@@ -24,6 +24,15 @@ static i32 label_id = 0;
 static i32 current_break_label = -1;
 static i32 current_continue_label = -1;
 
+typedef struct
+{
+    s8 *start;
+    u32 length;
+} thrive_string_data;
+
+static thrive_string_data string_pool[256];
+static u32 string_count = 0;
+
 void reset_locals(void)
 {
     var_count = 0;
@@ -359,6 +368,16 @@ void gen_expr(thrive_ast *node)
         break;
     }
 
+    case THRIVE_AST_STRING:
+    {
+        u32 id = string_count++;
+        string_pool[id].start = node->data.string_lit.start;
+        string_pool[id].length = node->data.string_lit.length;
+
+        printf("    lea rax, [rel .STR%d]\n", id);
+        break;
+    }
+
     default:
         break;
     }
@@ -527,7 +546,7 @@ void gen_program(thrive_ast *node)
     u32 i;
 
     printf("default rel\n");
-    
+
     /* Pass 1: Find and print all external declarations at the top */
     for (i = 0; i < node->data.block.count; ++i)
     {
@@ -565,6 +584,47 @@ void gen_program(thrive_ast *node)
         if (node->data.block.items[i]->kind == THRIVE_AST_FUNC_DECL)
         {
             gen_stmt(node->data.block.items[i]);
+        }
+    }
+
+    /* Emit Data Section for Strings */
+    if (string_count > 0)
+    {
+        printf("\nsection .data\n");
+        for (i = 0; i < string_count; ++i)
+        {
+            u32 j;
+            printf(".STR%d: db ", i);
+            for (j = 0; j < string_pool[i].length; ++j)
+            {
+                if (string_pool[i].start[j] == '\\' && j + 1 < string_pool[i].length)
+                {
+                    j++;
+                    switch (string_pool[i].start[j])
+                    {
+                    case 'n':
+                        printf("10, ");
+                        break;
+                    case 'r':
+                        printf("13, ");
+                        break;
+                    case 't':
+                        printf("9, ");
+                        break;
+                    case '0':
+                        printf("0, ");
+                        break;
+                    default:
+                        printf("%d, ", string_pool[i].start[j]);
+                        break;
+                    }
+                }
+                else
+                {
+                    printf("%d, ", string_pool[i].start[j]);
+                }
+            }
+            printf("0\n"); /* Null terminator */
         }
     }
 }
@@ -822,7 +882,17 @@ THRIVE_API void thrive_ast_print(thrive_ast *node, u32 depth)
  */
 int main(void)
 {
+    s8 *source_code =
+        "ext u32 MessageBoxA(u32 hWnd : s8 *lpText : s8 *lpCaption : u32 uType)\n"
+        "ext u32 ExitProcess(u32 uExitCode)\n"
+        "\n"
+        "s8 *text = \"Hello World from THRIVE!\\nIt works!\"\n"
+        "s8 *caption = \"Win32 Success\"\n"
+        "\n"
+        "MessageBoxA(0 : text : caption : 0)\n"
+        "ExitProcess(0)\n";
 
+    /*
     s8 *source_code =
         "ext u32 ExitProcess(u32 uExitCode)\n"
         "u32 mul(u32 a : u32 b) {\n"
@@ -836,7 +906,6 @@ int main(void)
         "u32 result = mul(add(1 : 3) : 2)\n"
         "ExitProcess(result)\n";
 
-    /*
     s8 *source_code =
         "u32  i = 1\n"
         "for(i = 0 : i < 10 : ++i) {\n"
