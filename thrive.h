@@ -377,13 +377,13 @@ repeat:
         /* String Literals */
         case '"':
         {
-            state->source_code++; state->column++; /* Skip opening " */
-            token.start = state->source_code;
+            state->source_code++; state->column++;
+            token.start = state->source_code; 
             
             while (*state->source_code && *state->source_code != '"') {
                 if (*state->source_code == '\n') { state->line++; state->column = 1; }
                 if (*state->source_code == '\\' && *(state->source_code + 1)) {
-                    state->source_code++; state->column++; /* skip escape char */
+                    state->source_code++; state->column++;
                 }
                 state->source_code++; state->column++;
             }
@@ -392,9 +392,11 @@ repeat:
             token.end = state->source_code;
             
             if (*state->source_code == '"') {
-                state->source_code++; state->column++; /* Skip closing " */
+                state->source_code++; state->column++;
             }
-            break;
+
+            state->current = token;
+            return;
         }
         /* Char Literals */
         case '\'':
@@ -422,7 +424,9 @@ repeat:
             
             token.kind = THRIVE_TOKEN_KIND_CHAR;
             token.value.number = val;
-            break;
+
+            state->current = token;
+            return;
         }
         /* Number processing */
         case '0': case '1': case '2': case '3': case '4': case '5': case '6':
