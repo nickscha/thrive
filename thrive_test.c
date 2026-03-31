@@ -699,7 +699,7 @@ THRIVE_API void thrive_ast_print(thrive_ast *node, u32 depth)
                node->data.string_lit.start);
         break;
     }
-    
+
     case THRIVE_AST_BINARY:
         printf("BINARY %s\n", thrive_token_kind_names[node->data.binary.op]);
 
@@ -992,26 +992,57 @@ int main(void)
 
         thrive_ast *ast;
 
-        /*
-        s8 *s2 =
-            "; this is a line comment          \n"
-            "u32 a   = 42                      \n"
-            "u32 b   = 27                      \n"
-            "u32 c   = 1                       \n"
-            "u32 res = a * c + b * 10 * (2 + 4)\n"
-            "ret res                           \n";
-        */
-
         s.line = 1;
         s.column = 1;
         s.source_code = source_code;
+        s.line_start = source_code;
         s.source_code_size = thrive_string_length(source_code);
 
         ast = thrive_ast_parse(&s);
 
         if (s.status.type != THRIVE_STATUS_OK)
         {
-            printf("[ERROR %d:%d] code: %d message: %s\n", s.status.line, s.status.column, s.status.type, s.status.message);
+            printf("[error] %s\n", s.status.message);
+            printf(" --> input:%u:%u\n", s.status.line, s.status.column);
+            printf("  |\n");
+            printf("%u | ", s.status.line);
+
+            s8 *p = s.status.line_start;
+            while (*p && *p != '\n')
+            {
+                putchar(*p);
+                p++;
+            }
+            putchar('\n');
+            printf("  | ");
+
+            u32 offset = (u32)(s.status.token_start - s.status.line_start);
+
+            u32 i;
+
+            for (i = 0; i < offset; ++i)
+            {
+                putchar(' ');
+            }
+
+            u32 len = (u32)(s.status.token_end - s.status.token_start);
+
+            if (len == 0)
+            {
+                len = 1;
+            }
+
+            putchar('^');
+
+            for (i = 1; i < len; ++i)
+            {
+                putchar('~');
+            }
+
+            printf(" %s", s.status.message);
+
+            putchar('\n');
+
             return 1;
         }
 

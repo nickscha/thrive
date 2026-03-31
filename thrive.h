@@ -161,8 +161,13 @@ typedef struct thrive_status
 
     s8 *message;
 
+    s8 *token_start;
+    s8 *token_end;
+
     u32 line;
     u32 column;
+
+    s8 *line_start;
 
 } thrive_status;
 
@@ -175,8 +180,11 @@ typedef struct thrive_status
         {                                                  \
             (s)->status.type = THRIVE_STATUS_ERROR_SYNTAX; \
             (s)->status.message = msg;                     \
+            (s)->status.token_start = (s)->current.start;  \
+            (s)->status.token_end = (s)->current.end;      \
             (s)->status.line = (s)->current.line;          \
             (s)->status.column = (s)->current.column;      \
+            (s)->status.line_start = (s)->line_start;      \
         }                                                  \
     } while (0)
 
@@ -323,6 +331,7 @@ typedef struct thrive_state
     thrive_token current;
     thrive_status status;
 
+    s8 *line_start;
     u32 line;   /* current line number, start at 1 */
     u32 column; /* current column, start at 1 */
 
@@ -510,6 +519,7 @@ repeat:
             state->source_code++; 
             state->line++;
             state->column = 1; 
+            state->line_start = state->source_code; 
             token.kind = THRIVE_TOKEN_KIND_NEW_LINE; 
             break; 
         }
@@ -1412,7 +1422,10 @@ THRIVE_API thrive_ast *thrive_ast_parse_statement(thrive_state *state)
             }
 
             if (!thrive_token_expect(state, THRIVE_TOKEN_KIND_RPAREN))
+            {
                 return 0;
+            }
+
             thrive_token_skip_newlines(state);
 
             node->data.func_decl.body = thrive_ast_parse_block_stmt(state);
