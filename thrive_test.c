@@ -692,6 +692,14 @@ THRIVE_API void thrive_ast_print(thrive_ast *node, u32 depth)
         printf("NAME %.*s\n", node->data.name.length, node->data.name.start);
         break;
 
+    case THRIVE_AST_STRING:
+    {
+        printf("STRING \"%.*s\"\n",
+               node->data.string_lit.length,
+               node->data.string_lit.start);
+        break;
+    }
+    
     case THRIVE_AST_BINARY:
         printf("BINARY %s\n", thrive_token_kind_names[node->data.binary.op]);
 
