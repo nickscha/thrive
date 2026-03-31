@@ -244,8 +244,8 @@ typedef enum thrive_token_kind
     THRIVE_TOKEN_KIND_CHAR,
     THRIVE_TOKEN_KIND_KEYWORD_EXT,
     THRIVE_TOKEN_KIND_KEYWORD_RET,
-    THRIVE_TOKEN_KIND_KEYWORD_U32,
-    THRIVE_TOKEN_KIND_KEYWORD_S8,
+    THRIVE_TOKEN_KIND_TYPE_U32,
+    THRIVE_TOKEN_KIND_TYPE_S8,
     THRIVE_TOKEN_KIND_KEYWORD_IF,
     THRIVE_TOKEN_KIND_KEYWORD_ELSE,
     THRIVE_TOKEN_KIND_KEYWORD_FOR,
@@ -498,13 +498,13 @@ repeat:
                     if (token.start[0] == 'i' && token.start[1] == 'f')
                         token.kind = THRIVE_TOKEN_KIND_KEYWORD_IF;
                     else if (token.start[0] == 's' && token.start[1] == '8')
-                        token.kind = THRIVE_TOKEN_KIND_KEYWORD_S8;
+                        token.kind = THRIVE_TOKEN_KIND_TYPE_S8;
                     break;
                 case 3:
                     if (token.start[0] == 'r' && token.start[1] == 'e' && token.start[2] == 't')
                         token.kind = THRIVE_TOKEN_KIND_KEYWORD_RET;
                     else if (token.start[0] == 'u' && token.start[1] == '3' && token.start[2] == '2')
-                        token.kind = THRIVE_TOKEN_KIND_KEYWORD_U32;
+                        token.kind = THRIVE_TOKEN_KIND_TYPE_U32;
                     else if (token.start[0] == 'f' && token.start[1] == 'o' && token.start[2] == 'r')
                         token.kind = THRIVE_TOKEN_KIND_KEYWORD_FOR;
                     else if (token.start[0] == 'e' && token.start[1] == 'x' && token.start[2] == 't')
@@ -634,8 +634,8 @@ THRIVE_API u8 thrive_token_expect(thrive_state *state, thrive_token_kind kind)
 
 THRIVE_API u8 thrive_token_accept_type(thrive_state *state)
 {
-    if (state->current.kind == THRIVE_TOKEN_KIND_KEYWORD_U32 ||
-        state->current.kind == THRIVE_TOKEN_KIND_KEYWORD_S8)
+    if (state->current.kind == THRIVE_TOKEN_KIND_TYPE_U32 ||
+        state->current.kind == THRIVE_TOKEN_KIND_TYPE_S8)
     {
         thrive_token_next(state);
         return 1;
@@ -645,8 +645,8 @@ THRIVE_API u8 thrive_token_accept_type(thrive_state *state)
 
 THRIVE_API u8 thrive_token_expect_type(thrive_state *state)
 {
-    if (state->current.kind == THRIVE_TOKEN_KIND_KEYWORD_U32 ||
-        state->current.kind == THRIVE_TOKEN_KIND_KEYWORD_S8)
+    if (state->current.kind == THRIVE_TOKEN_KIND_TYPE_U32 ||
+        state->current.kind == THRIVE_TOKEN_KIND_TYPE_S8)
     {
         thrive_token_next(state);
         return 1;
