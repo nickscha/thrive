@@ -936,7 +936,7 @@ void emit_u32(u32 d)
 }
 
 /* mov rax, <imm32>  -> 48 C7 C0 [xx xx xx xx] */
-void gen_mov_rax_imm(u32 val)
+void emit_mov_rax_imm(u32 val)
 {
     emit_byte(0x48);
     emit_byte(0xC7);
@@ -944,27 +944,39 @@ void gen_mov_rax_imm(u32 val)
     emit_u32(val);
 }
 
-void gen_push_rax()
+void emit_push_rax()
 {
     emit_byte(0x50);
 }
 
-void gen_pop_rbx()
+void emit_pop_rbx()
 {
     emit_byte(0x5B);
 }
 
 /* push rbp          -> 55 */
-void emit_push_rbp() { emit_byte(0x55); }
+void emit_push_rbp()
+{
+    emit_byte(0x55);
+}
 
 /* pop rax           -> 58 */
-void emit_pop_rax() { emit_byte(0x58); }
+void emit_pop_rax()
+{
+    emit_byte(0x58);
+}
 
 /* leave (mov rsp, rbp; pop rbp) -> C9 */
-void emit_leave() { emit_byte(0xC9); }
+void emit_leave()
+{
+    emit_byte(0xC9);
+}
 
 /* ret               -> C3 */
-void emit_ret() { emit_byte(0xC3); }
+void emit_ret()
+{
+    emit_byte(0xC3);
+}
 
 /* mov rbp, rsp      -> 48 89 E5 */
 void emit_mov_rbp_rsp()
