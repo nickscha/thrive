@@ -915,7 +915,9 @@ int main(void)
         "s8 *text = \"Hello World from THRIVE!\\nIt works!\"\n"
         "s8 *caption = \"Win32 Success\"\n"
         "\n"
-        "MessageBoxA(0 : text : caption : 0)\n"
+        "u32 i = 0\n"
+        "for (i = 0 : i < 3 : ++i)\n"
+        "  MessageBoxA(0 : text : caption : 0)\n"
         "ExitProcess(0)\n";
 
     /*
