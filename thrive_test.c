@@ -348,23 +348,40 @@ void gen_expr(thrive_ast *node)
     {
         u32 i;
         s8 *arg_regs[] = {"rcx", "rdx", "r8", "r9"};
+        u32 arg_count = node->data.func_call.arg_count;
 
-        for (i = 0; i < node->data.func_call.arg_count; ++i)
+        /* 1. Evaluate and push all arguments */
+        for (i = 0; i < arg_count; ++i)
         {
             gen_expr(node->data.func_call.args[i]);
             printf("    push rax\n");
         }
 
-        for (i = node->data.func_call.arg_count; i > 0; --i)
+        /* 2. Pop up to the first 4 into registers */
+        u32 reg_args = arg_count > 4 ? 4 : arg_count;
+        for (i = reg_args; i > 0; --i)
         {
             printf("    pop %s\n", arg_regs[i - 1]);
         }
 
+        /* 3. The 5th+ arguments are already on the stack.
+           We must add 32 bytes of shadow space for the called function. */
         printf("    sub rsp, 32\n");
+
+        /* TODO: To be perfectly safe, you must calculate total stack depth here
+           and ensure (rsp & 15) == 0 before the call. */
+
         printf("    call %.*s\n",
                node->data.func_call.name->data.name.length,
                node->data.func_call.name->data.name.start);
-        printf("    add rsp, 32\n");
+
+        /* 4. Clean up shadow space AND stack arguments */
+        u32 stack_cleanup = 32;
+        if (arg_count > 4)
+        {
+            stack_cleanup += (arg_count - 4) * 8;
+        }
+        printf("    add rsp, %u\n", stack_cleanup);
 
         break;
     }
