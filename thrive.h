@@ -51,13 +51,13 @@ SYNTAX (WIP)
       break
 
   ; function declaration
-  u32 sum(u32 a, u32 b)
+  u32 sum(u32 a : u32 b)
     u32 result
     result = a + b
     ret result
 
   ; function call
-  u32 res = sum(a, b)
+  u32 res = sum(a : b)
 
 LICENSE
 
