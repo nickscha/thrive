@@ -918,11 +918,167 @@ THRIVE_API void thrive_ast_print(thrive_ast *node, u32 depth)
 }
 
 /* #############################################################################
+ * # [SECTION] Assembler
+ * #############################################################################
+ */
+static u8 binary_buffer[1024 * 64];
+static u32 binary_pos = 0;
+
+void emit_byte(u8 b)
+{
+    binary_buffer[binary_pos++] = b;
+}
+
+void emit_u32(u32 d)
+{
+    *(u32 *)&binary_buffer[binary_pos] = d;
+    binary_pos += 4;
+}
+
+/* mov rax, <imm32>  -> 48 C7 C0 [xx xx xx xx] */
+void gen_mov_rax_imm(u32 val)
+{
+    emit_byte(0x48);
+    emit_byte(0xC7);
+    emit_byte(0xC0);
+    emit_u32(val);
+}
+
+void gen_push_rax()
+{
+    emit_byte(0x50);
+}
+
+void gen_pop_rbx()
+{
+    emit_byte(0x5B);
+}
+
+/* push rbp          -> 55 */
+void emit_push_rbp() { emit_byte(0x55); }
+
+/* pop rax           -> 58 */
+void emit_pop_rax() { emit_byte(0x58); }
+
+/* leave (mov rsp, rbp; pop rbp) -> C9 */
+void emit_leave() { emit_byte(0xC9); }
+
+/* ret               -> C3 */
+void emit_ret() { emit_byte(0xC3); }
+
+/* mov rbp, rsp      -> 48 89 E5 */
+void emit_mov_rbp_rsp()
+{
+    emit_byte(0x48);
+    emit_byte(0x89);
+    emit_byte(0xE5);
+}
+
+/* sub rsp, imm32    -> 48 81 EC [xx xx xx xx] */
+void emit_sub_rsp_imm(u32 val)
+{
+    emit_byte(0x48);
+    emit_byte(0x81);
+    emit_byte(0xEC);
+    emit_u32(val);
+}
+
+/* mov [rbp + offset], rax -> 48 89 85 [offset32] */
+void emit_mov_mrbp_rax(i32 offset)
+{
+    emit_byte(0x48);
+    emit_byte(0x89);
+    emit_byte(0x85);
+    emit_u32((u32)offset);
+}
+
+/* mov rax, [rbp + offset] -> 48 8B 85 [offset32] */
+void emit_mov_rax_mrbp(i32 offset)
+{
+    emit_byte(0x48);
+    emit_byte(0x8B);
+    emit_byte(0x85);
+    emit_u32((u32)offset);
+}
+
+/* add rax, rbx      -> 48 01 D8 */
+void emit_add_rax_rbx()
+{
+    emit_byte(0x48);
+    emit_byte(0x01);
+    emit_byte(0xD8);
+}
+
+/* sub rbx, rax      -> 48 29 C3 */
+void emit_sub_rbx_rax()
+{
+    emit_byte(0x48);
+    emit_byte(0x29);
+    emit_byte(0xC3);
+}
+
+/* imul rax, rbx     -> 48 0F AF C3 */
+void emit_imul_rax_rbx()
+{
+    emit_byte(0x48);
+    emit_byte(0x0F);
+    emit_byte(0xAF);
+    emit_byte(0xC3);
+}
+
+/* xor rdx, rdx      -> 48 31 D2 */
+void emit_xor_rdx_rdx()
+{
+    emit_byte(0x48);
+    emit_byte(0x31);
+    emit_byte(0xD2);
+}
+
+/* idiv rcx          -> 48 F7 F9 */
+void emit_idiv_rcx()
+{
+    emit_byte(0x48);
+    emit_byte(0xF7);
+    emit_byte(0xF9);
+}
+
+/* cmp rbx, rax      -> 48 39 C3 */
+void emit_cmp_rbx_rax()
+{
+    emit_byte(0x48);
+    emit_byte(0x39);
+    emit_byte(0xC3);
+}
+
+/* setl al           -> 0F 9C C0 */
+void emit_setl_al()
+{
+    emit_byte(0x0F);
+    emit_byte(0x9C);
+    emit_byte(0xC0);
+}
+
+/* movzx rax, al     -> 48 0F B6 C0 */
+void emit_movzx_rax_al()
+{
+    emit_byte(0x48);
+    emit_byte(0x0F);
+    emit_byte(0xB6);
+    emit_byte(0xC0);
+}
+
+/* #############################################################################
  * # [SECTION] Testing
  * #############################################################################
  */
 int main(void)
 {
+    s8 *source_code =
+        "ext u32 ExitProcess(u32 uExitCode)\n"
+        "u32 i = (1 + 2) * 2 - 2\n"
+        "ExitProcess(i)\n";
+
+    /*
     s8 *source_code =
         "ext u32 MessageBoxA(u32 hWnd : s8 *lpText : s8 *lpCaption : u32 uType)\n"
         "ext u32 ExitProcess(u32 uExitCode)\n"
@@ -935,7 +1091,6 @@ int main(void)
         "  MessageBoxA(0 : text : caption : 0)\n"
         "ExitProcess(0)\n";
 
-    /*
     s8 *source_code =
         "ext u32 ExitProcess(u32 uExitCode)\n"
         "u32 mul(u32 a : u32 b) {\n"
