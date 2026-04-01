@@ -916,7 +916,7 @@ int main(void)
         "s8 *caption = \"Win32 Success\"\n"
         "\n"
         "u32 i = 0\n"
-        "for (i = 0 : i < 3 : ++i)\n"
+        "for (i = 0 : i < (1 + 2) : ++i)\n"
         "  MessageBoxA(0 : text : caption : 0)\n"
         "ExitProcess(0)\n";
 
@@ -1030,8 +1030,8 @@ int main(void)
         {
             printf("[error] %s\n", s.status.message);
             printf(" --> input:%u:%u\n", s.status.line, s.status.column);
-            printf("  |\n");
-            printf("%u | ", s.status.line);
+            printf("    |\n");
+            printf("%3d | ", s.status.line);
 
             s8 *p = s.status.line_start;
             while (*p && *p != '\n')
@@ -1040,7 +1040,7 @@ int main(void)
                 p++;
             }
             putchar('\n');
-            printf("  | ");
+            printf("    | ");
 
             u32 offset = (u32)(s.status.token_start - s.status.line_start);
 
