@@ -396,6 +396,21 @@ void gen_expr(thrive_ast *node)
         break;
     }
 
+    case THRIVE_TOKEN_KIND_LSHIFT:
+    {
+        printf("    mov rcx, rax\n");
+        printf("    shl rbx, cl\n");
+        printf("    mov rax, rbx\n");
+        break;
+    }
+    case THRIVE_TOKEN_KIND_RSHIFT:
+    {
+        printf("    mov rcx, rax\n");
+        printf("    shr rbx, cl\n");
+        printf("    mov rax, rbx\n");
+        break;
+    }
+
     default:
         break;
     }

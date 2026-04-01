@@ -235,6 +235,8 @@ typedef enum thrive_token_kind
     THRIVE_TOKEN_KIND_AND_LOGICAL, /* && */
     THRIVE_TOKEN_KIND_XOR_BITWISE, /* ^ */
     THRIVE_TOKEN_KIND_NOT_BITWISE, /* ~ */
+    THRIVE_TOKEN_KIND_LSHIFT,      /* << */
+    THRIVE_TOKEN_KIND_RSHIFT,      /* >> */
 
     /* Tenary */
     THRIVE_TOKEN_KIND_QUESTION, /* ? */
@@ -581,8 +583,6 @@ repeat:
         THRIVE_TOKEN_CASE_2('!', THRIVE_TOKEN_KIND_NEGATE, '=', THRIVE_TOKEN_KIND_NOT_EQUALS)
         THRIVE_TOKEN_CASE_2('*', THRIVE_TOKEN_KIND_MUL, '=', THRIVE_TOKEN_KIND_MUL_ASSIGN)
         THRIVE_TOKEN_CASE_2('/', THRIVE_TOKEN_KIND_DIV, '=', THRIVE_TOKEN_KIND_DIV_ASSIGN)
-        THRIVE_TOKEN_CASE_2('<', THRIVE_TOKEN_KIND_LT, '=', THRIVE_TOKEN_KIND_LT_EQUALS)        
-        THRIVE_TOKEN_CASE_2('>', THRIVE_TOKEN_KIND_GT, '=', THRIVE_TOKEN_KIND_GT_EQUALS)        
         THRIVE_TOKEN_CASE_2('|', THRIVE_TOKEN_KIND_OR_BITWISE, '|', THRIVE_TOKEN_KIND_OR_LOGICAL)     
         THRIVE_TOKEN_CASE_2('&', THRIVE_TOKEN_KIND_AND_BITWISE, '&', THRIVE_TOKEN_KIND_AND_LOGICAL)     
 
@@ -604,6 +604,8 @@ repeat:
               }                                       \
               break; }
 
+        THRIVE_TOKEN_CASE_3('<', THRIVE_TOKEN_KIND_LT, '<', THRIVE_TOKEN_KIND_LSHIFT, '=', THRIVE_TOKEN_KIND_LT_EQUALS)        
+        THRIVE_TOKEN_CASE_3('>', THRIVE_TOKEN_KIND_GT, '>', THRIVE_TOKEN_KIND_RSHIFT, '=', THRIVE_TOKEN_KIND_GT_EQUALS)      
         THRIVE_TOKEN_CASE_3('+', THRIVE_TOKEN_KIND_ADD, '+', THRIVE_TOKEN_KIND_INC, '=', THRIVE_TOKEN_KIND_ADD_ASSIGN)
         THRIVE_TOKEN_CASE_3('-', THRIVE_TOKEN_KIND_SUB, '-', THRIVE_TOKEN_KIND_DEC, '=', THRIVE_TOKEN_KIND_SUB_ASSIGN)                
 
@@ -1030,6 +1032,13 @@ THRIVE_API i32 thrive_ast_infix_bp(thrive_token_kind op, i32 *l_bp, i32 *r_bp)
     case THRIVE_TOKEN_KIND_GT_EQUALS:
         *l_bp = 80;
         *r_bp = 81;
+        return 1;
+
+    /* Bitwise Shifts */
+    case THRIVE_TOKEN_KIND_LSHIFT:
+    case THRIVE_TOKEN_KIND_RSHIFT:
+        *l_bp = 85;
+        *r_bp = 86;
         return 1;
 
     /* Addition / Subtraction */
