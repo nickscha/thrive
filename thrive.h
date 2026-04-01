@@ -148,16 +148,18 @@ THRIVE_API THRIVE_INLINE u32 thrive_string_equals(s8 *a, s8 *b, u32 len)
  * # [SECTION] Thrive Status
  * #############################################################################
  */
+typedef enum thrive_status_type
+{
+    THRIVE_STATUS_OK = 0,
+    THRIVE_STATUS_ERROR_ARGUMENTS,
+    THRIVE_STATUS_ERROR_SYNTAX,
+    THRIVE_STATUS_ERROR_MEMORY
+
+} thrive_status_type;
+
 typedef struct thrive_status
 {
-    enum type
-    {
-        THRIVE_STATUS_OK = 0,
-        THRIVE_STATUS_ERROR_ARGUMENTS,
-        THRIVE_STATUS_ERROR_SYNTAX,
-        THRIVE_STATUS_ERROR_MEMORY
-
-    } type;
+    thrive_status_type type;
 
     s8 *message;
 
