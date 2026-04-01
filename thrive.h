@@ -323,6 +323,8 @@ typedef struct thrive_token
 
 } thrive_token;
 
+typedef struct thrive_ast thrive_ast;
+
 typedef struct thrive_state
 {
     s8 *source_code;
@@ -334,6 +336,10 @@ typedef struct thrive_state
     s8 *line_start;
     u32 line;   /* current line number, start at 1 */
     u32 column; /* current column, start at 1 */
+
+    thrive_ast *ast_pool;
+    u32 ast_count;
+    u32 ast_capacity;
 
 } thrive_state;
 
@@ -693,12 +699,9 @@ typedef enum thrive_ast_kind
 
 } thrive_ast_kind;
 
-typedef struct thrive_ast thrive_ast;
-
 #define THRIVE_BLOCK_MAX 256
 #define THRIVE_FUNC_MAX_PARAMS 8
 #define THRIVE_FUNC_MAX_ARGS 8
-#define THRIVE_AST_MAX 1024
 
 typedef struct thrive_ast_block
 {
@@ -805,19 +808,16 @@ struct thrive_ast
     } data;
 };
 
-static thrive_ast thrive_ast_pool[THRIVE_AST_MAX];
-static u32 thrive_ast_count = 0;
-
 THRIVE_API thrive_ast *thrive_ast_new(thrive_state *state)
 {
-    if (thrive_ast_count >= THRIVE_AST_MAX)
+    if (state->ast_count >= state->ast_capacity)
     {
         state->status.type = THRIVE_STATUS_ERROR_MEMORY;
-        state->status.message = "Exceeded 'THRIVE_AST_MAX' ast memory pool!\n";
+        state->status.message = "AST pool exhausted";
         return 0;
     }
 
-    return &thrive_ast_pool[thrive_ast_count++];
+    return &state->ast_pool[state->ast_count++];
 }
 
 /*
@@ -1639,7 +1639,7 @@ THRIVE_API thrive_ast *thrive_ast_parse_program(thrive_state *state)
 
 THRIVE_API thrive_ast *thrive_ast_parse(thrive_state *state)
 {
-    thrive_ast_count = 0;
+    state->ast_count = 0;
     return thrive_ast_parse_program(state);
 }
 

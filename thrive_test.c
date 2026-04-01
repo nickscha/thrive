@@ -1,6 +1,7 @@
 
 #include "thrive.h"
 #include "stdio.h"
+#include "stdlib.h"
 
 /* #############################################################################
  * # [SECTION] Codegen
@@ -961,7 +962,10 @@ int main(void)
     state.line = 1;
     state.column = 1;
     state.source_code = source_code;
+    state.line_start = source_code;
     state.source_code_size = thrive_string_length(source_code);
+    state.ast_pool = malloc(sizeof(thrive_ast) * 1024);
+    state.ast_capacity = 1024;
 
     printf("--------------------\n");
     printf("%s", source_code);
@@ -971,7 +975,6 @@ int main(void)
     printf("[size] thrive_state     = %10d\n", (u32)sizeof(thrive_state));
     printf("[size] thrive_ast_block = %10d\n", (u32)sizeof(thrive_ast_block));
     printf("[size] thrive_ast       = %10d\n", (u32)sizeof(thrive_ast));
-    printf("[size] thrive_ast_pool  = %10d\n", (u32)sizeof(thrive_ast_pool));
     printf("--------------------\n");
 
     thrive_token_next(&state);
@@ -985,6 +988,8 @@ int main(void)
         print_token(state.current);
     }
 
+    free(state.ast_pool);
+
     /* Parse */
     printf("--------------------\n");
     {
@@ -997,6 +1002,8 @@ int main(void)
         s.source_code = source_code;
         s.line_start = source_code;
         s.source_code_size = thrive_string_length(source_code);
+        s.ast_pool = malloc(sizeof(thrive_ast) * 1024);
+        s.ast_capacity = 1024;
 
         ast = thrive_ast_parse(&s);
 

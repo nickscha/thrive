@@ -548,6 +548,9 @@ THRIVE_API i32 thrive_compile(s8 *file_name, void *hConsole, LARGE_INTEGER *freq
         s.column = 1;
         s.source_code = source_code;
         s.source_code_size = source_code_size;
+        s.line_start = s.source_code;
+        s.ast_pool = VirtualAlloc((void *)0, sizeof(thrive_ast) * 1024, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+        s.ast_capacity = 1024;
 
         QueryPerformanceCounter(&metrics[METRIC_PARSING].time_start);
         ast = thrive_ast_parse(&s);
@@ -568,6 +571,8 @@ THRIVE_API i32 thrive_compile(s8 *file_name, void *hConsole, LARGE_INTEGER *freq
             WriteConsoleA(hConsole, s.status.message, thrive_string_length(s.status.message), &written, 0);
             WriteConsoleA(hConsole, "\n", 1, &written, 0);
         }
+
+        VirtualFree(s.ast_pool, 0, MEM_RELEASE);
     }
 
     /* Gather metrics */
