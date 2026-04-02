@@ -304,19 +304,10 @@ typedef enum thrive_ast_kind
 
 } thrive_ast_kind;
 
-#define THRIVE_BLOCK_MAX 256
-#define THRIVE_FUNC_MAX_PARAMS 8
-#define THRIVE_FUNC_MAX_ARGS 8
-
-typedef struct thrive_ast_block
-{
-    thrive_ast *items[THRIVE_BLOCK_MAX];
-    u32 count;
-} thrive_ast_block;
-
 struct thrive_ast
 {
     thrive_ast_kind kind;
+    thrive_ast *next;
 
     union
     {
@@ -383,23 +374,20 @@ struct thrive_ast
         struct
         {
             thrive_ast *name;
-            thrive_ast *params[THRIVE_FUNC_MAX_PARAMS];
-            u32 param_count;
+            thrive_ast *params; /* Points to first param node (linked via .next) */
             thrive_ast *body;
         } func_decl;
 
         struct
         {
             thrive_ast *name;
-            thrive_ast *args[THRIVE_FUNC_MAX_ARGS];
-            u32 arg_count;
+            thrive_ast *args; /* Points to first argument node (linked via .next) */
         } func_call;
 
         struct
         {
             thrive_ast *name;
-            thrive_ast *params[THRIVE_FUNC_MAX_PARAMS];
-            u32 param_count;
+            thrive_ast *params; /* Points to first param node (linked via .next) */
         } ext_decl;
 
         struct
@@ -408,7 +396,10 @@ struct thrive_ast
             u32 length;
         } string_lit;
 
-        thrive_ast_block block;
+        struct
+        {
+            thrive_ast *body; /* first statement in the block */
+        } block;
 
     } data;
 };
@@ -1071,12 +1062,16 @@ THRIVE_API thrive_ast *thrive_ast_parse_expr_bp(thrive_state *state, i32 min_bp)
         if (op == THRIVE_TOKEN_KIND_LPAREN)
         {
             thrive_ast *call_node = thrive_ast_create(state, THRIVE_AST_FUNC_CALL);
-            call_node->data.func_call.name = left; /* 'left' is the expr before the '(' */
-            call_node->data.func_call.arg_count = 0;
+            thrive_ast **tail;
 
-            while (state->current.kind != THRIVE_TOKEN_KIND_RPAREN && state->current.kind != THRIVE_TOKEN_KIND_EOF)
+            call_node->data.func_call.name = left;
+            tail = &call_node->data.func_call.args;
+
+            while (state->current.kind != THRIVE_TOKEN_KIND_RPAREN)
             {
-                call_node->data.func_call.args[call_node->data.func_call.arg_count++] = thrive_ast_parse_expr(state);
+                thrive_ast *arg = thrive_ast_parse_expr(state);
+                *tail = arg;
+                tail = &arg->next;
 
                 if (!thrive_token_accept(state, THRIVE_TOKEN_KIND_COLON))
                 {
@@ -1185,39 +1180,31 @@ THRIVE_API thrive_ast *thrive_ast_parse_statement(thrive_state *state);
 
 THRIVE_API thrive_ast *thrive_ast_parse_block_stmt(thrive_state *state)
 {
-    thrive_ast *node = thrive_ast_create(state, THRIVE_AST_BLOCK);
-
-    node->data.block.count = 0;
+    thrive_ast *block_node = thrive_ast_create(state, THRIVE_AST_BLOCK);
+    thrive_ast **tail = &block_node->data.block.body;
 
     thrive_token_expect(state, THRIVE_TOKEN_KIND_LBRACE);
-
     thrive_token_skip_newlines(state);
 
-    while (state->current.kind != THRIVE_TOKEN_KIND_RBRACE && state->current.kind != THRIVE_TOKEN_KIND_EOF)
+    while (state->current.kind != THRIVE_TOKEN_KIND_RBRACE &&
+           state->current.kind != THRIVE_TOKEN_KIND_EOF)
     {
-        thrive_ast *stmt;
-
-        if (node->data.block.count >= THRIVE_BLOCK_MAX)
-        {
-            thrive_error(state, THRIVE_STATUS_ERROR_MEMORY, "Block too large");
-            return 0;
-        }
-
-        stmt = thrive_ast_parse_statement(state);
+        thrive_ast *stmt = thrive_ast_parse_statement(state);
 
         if (!stmt)
         {
             return 0;
         }
 
-        node->data.block.items[node->data.block.count++] = stmt;
+        *tail = stmt;       /* Attach new stmt to the end of the list */
+        tail = &stmt->next; /* Move tail pointer to the new end */
 
         thrive_token_skip_newlines(state);
     }
 
     thrive_token_expect(state, THRIVE_TOKEN_KIND_RBRACE);
 
-    return node;
+    return block_node;
 }
 
 THRIVE_API thrive_ast *thrive_ast_parse_statement(thrive_state *state)
@@ -1232,14 +1219,15 @@ THRIVE_API thrive_ast *thrive_ast_parse_statement(thrive_state *state)
     {
         thrive_ast *node = thrive_ast_create(state, THRIVE_AST_EXT_DECL);
         thrive_token name_tok;
+        thrive_ast **p_tail;
 
-        node->data.ext_decl.param_count = 0;
+        node->data.ext_decl.params = 0;
+        p_tail = &node->data.ext_decl.params;
 
         /* Skip return type for now */
         thrive_token_expect_type(state);
 
         name_tok = state->current;
-
         thrive_token_expect(state, THRIVE_TOKEN_KIND_NAME);
 
         node->data.ext_decl.name = thrive_ast_create(state, THRIVE_AST_NAME);
@@ -1257,17 +1245,18 @@ THRIVE_API thrive_ast *thrive_ast_parse_statement(thrive_state *state)
             /* Skip parameter type for now */
             thrive_token_expect_type(state);
 
+            /* Handle pointer '*' if present */
             thrive_token_accept(state, THRIVE_TOKEN_KIND_MUL);
 
             p_tok = state->current;
-
             thrive_token_expect(state, THRIVE_TOKEN_KIND_NAME);
 
             p_node = thrive_ast_create(state, THRIVE_AST_NAME);
             p_node->data.name.start = p_tok.start;
             p_node->data.name.length = (u32)(p_tok.end - p_tok.start);
 
-            node->data.ext_decl.params[node->data.ext_decl.param_count++] = p_node;
+            *p_tail = p_node;
+            p_tail = &p_node->next;
 
             if (!thrive_token_accept(state, THRIVE_TOKEN_KIND_COLON))
             {
@@ -1314,11 +1303,15 @@ THRIVE_API thrive_ast *thrive_ast_parse_statement(thrive_state *state)
         /* function declaration */
         if (thrive_token_accept(state, THRIVE_TOKEN_KIND_LPAREN))
         {
+            thrive_ast **p_tail;
             node = thrive_ast_create(state, THRIVE_AST_FUNC_DECL);
             node->data.func_decl.name = name;
-            node->data.func_decl.param_count = 0;
+            node->data.func_decl.params = 0;
 
-            while (state->current.kind != THRIVE_TOKEN_KIND_RPAREN && state->current.kind != THRIVE_TOKEN_KIND_EOF)
+            p_tail = &node->data.func_decl.params;
+
+            while (state->current.kind != THRIVE_TOKEN_KIND_RPAREN &&
+                   state->current.kind != THRIVE_TOKEN_KIND_EOF)
             {
                 if (thrive_token_accept_type(state))
                 {
@@ -1328,14 +1321,14 @@ THRIVE_API thrive_ast *thrive_ast_parse_statement(thrive_state *state)
                     thrive_token_accept(state, THRIVE_TOKEN_KIND_MUL);
 
                     p_tok = state->current;
-                    p_name = thrive_ast_create(state, THRIVE_AST_NAME);
-
                     thrive_token_expect(state, THRIVE_TOKEN_KIND_NAME);
 
+                    p_name = thrive_ast_create(state, THRIVE_AST_NAME);
                     p_name->data.name.start = p_tok.start;
                     p_name->data.name.length = (u32)(p_tok.end - p_tok.start);
 
-                    node->data.func_decl.params[node->data.func_decl.param_count++] = p_name;
+                    *p_tail = p_name;
+                    p_tail = &p_name->next;
                 }
 
                 if (!thrive_token_accept(state, THRIVE_TOKEN_KIND_COLON))
@@ -1345,7 +1338,6 @@ THRIVE_API thrive_ast *thrive_ast_parse_statement(thrive_state *state)
             }
 
             thrive_token_expect(state, THRIVE_TOKEN_KIND_RPAREN);
-
             thrive_token_skip_newlines(state);
 
             node->data.func_decl.body = thrive_ast_parse_block_stmt(state);
@@ -1463,8 +1455,7 @@ THRIVE_API thrive_ast *thrive_ast_parse_statement(thrive_state *state)
 THRIVE_API thrive_ast *thrive_ast_parse_program(thrive_state *state)
 {
     thrive_ast *node = thrive_ast_create(state, THRIVE_AST_BLOCK);
-
-    node->data.block.count = 0;
+    thrive_ast **tail = &node->data.block.body;
 
     thrive_token_next(state);
     thrive_token_skip_newlines(state);
@@ -1475,17 +1466,6 @@ THRIVE_API thrive_ast *thrive_ast_parse_program(thrive_state *state)
 
         thrive_token_skip_newlines(state);
 
-        if (state->current.kind == THRIVE_TOKEN_KIND_EOF)
-        {
-            break;
-        }
-
-        if (node->data.block.count >= THRIVE_BLOCK_MAX)
-        {
-            thrive_error(state, THRIVE_STATUS_ERROR_MEMORY, "THRIVE_BLOCK_MAX memory limit exceeded!");
-            break;
-        }
-
         stmt = thrive_ast_parse_statement(state);
 
         if (!stmt)
@@ -1493,7 +1473,9 @@ THRIVE_API thrive_ast *thrive_ast_parse_program(thrive_state *state)
             break;
         }
 
-        node->data.block.items[node->data.block.count++] = stmt;
+        /* Append to the global block list */
+        *tail = stmt;
+        tail = &stmt->next;
 
         thrive_token_skip_newlines(state);
     }
@@ -1716,11 +1698,12 @@ THRIVE_API thrive_ast *thrive_ast_fold(thrive_ast *node)
 
     case THRIVE_AST_BLOCK:
     {
-        u32 i;
+        thrive_ast *curr = node->data.block.body;
 
-        for (i = 0; i < node->data.block.count; ++i)
+        while (curr)
         {
-            node->data.block.items[i] = thrive_ast_fold(node->data.block.items[i]);
+            curr = thrive_ast_fold(curr);
+            curr = curr->next;
         }
         return node;
     }
@@ -1734,11 +1717,22 @@ THRIVE_API thrive_ast *thrive_ast_fold(thrive_ast *node)
 
     case THRIVE_AST_FUNC_CALL:
     {
-        u32 i;
-
-        for (i = 0; i < node->data.func_call.arg_count; ++i)
+        thrive_ast **curr = &node->data.func_call.args;
+        while (*curr)
         {
-            node->data.func_call.args[i] = thrive_ast_fold(node->data.func_call.args[i]);
+            *curr = thrive_ast_fold(*curr);
+            curr = &(*curr)->next;
+        }
+        return node;
+    }
+
+    case THRIVE_AST_EXT_DECL:
+    {
+        thrive_ast **curr = &node->data.ext_decl.params;
+        while (*curr)
+        {
+            *curr = thrive_ast_fold(*curr);
+            curr = &(*curr)->next;
         }
         return node;
     }

@@ -346,43 +346,32 @@ void gen_expr(thrive_ast *node)
 
     case THRIVE_AST_FUNC_CALL:
     {
-        u32 i;
+        thrive_ast *curr = node->data.func_call.args;
         s8 *arg_regs[] = {"rcx", "rdx", "r8", "r9"};
-        u32 arg_count = node->data.func_call.arg_count;
+        u32 arg_count = 0;
+        u32 i;
 
-        /* 1. Evaluate and push all arguments */
-        for (i = 0; i < arg_count; ++i)
+        while (curr)
         {
-            gen_expr(node->data.func_call.args[i]);
+            gen_expr(curr);
             printf("    push rax\n");
+            arg_count++;
+            curr = curr->next;
         }
 
-        /* 2. Pop up to the first 4 into registers */
         u32 reg_args = arg_count > 4 ? 4 : arg_count;
         for (i = reg_args; i > 0; --i)
         {
             printf("    pop %s\n", arg_regs[i - 1]);
         }
 
-        /* 3. The 5th+ arguments are already on the stack.
-           We must add 32 bytes of shadow space for the called function. */
         printf("    sub rsp, 32\n");
-
-        /* TODO: To be perfectly safe, you must calculate total stack depth here
-           and ensure (rsp & 15) == 0 before the call. */
-
         printf("    call %.*s\n",
                node->data.func_call.name->data.name.length,
                node->data.func_call.name->data.name.start);
 
-        /* 4. Clean up shadow space AND stack arguments */
-        u32 stack_cleanup = 32;
-        if (arg_count > 4)
-        {
-            stack_cleanup += (arg_count - 4) * 8;
-        }
+        u32 stack_cleanup = 32 + (arg_count > 4 ? (arg_count - 4) * 8 : 0);
         printf("    add rsp, %u\n", stack_cleanup);
-
         break;
     }
 
@@ -508,40 +497,37 @@ void gen_stmt(thrive_ast *node)
     }
     case THRIVE_AST_BLOCK:
     {
-        u32 i;
-
-        for (i = 0; i < node->data.block.count; ++i)
+        thrive_ast *curr = node->data.block.body;
+        while (curr)
         {
-            gen_stmt(node->data.block.items[i]);
+            gen_stmt(curr);
+            curr = curr->next;
         }
         break;
     }
 
     case THRIVE_AST_FUNC_DECL:
     {
-        u32 i;
+        thrive_ast *curr = node->data.func_decl.params;
         s8 *arg_regs[] = {"rcx", "rdx", "r8", "r9"};
+        u32 p_idx = 0;
 
         printf("\n%.*s:\n", node->data.func_decl.name->data.name.length, node->data.func_decl.name->data.name.start);
-        printf("    push rbp\n");
-        printf("    mov rbp, rsp\n");
-        printf("    sub rsp, 256\n");
+        printf("    push rbp\n    mov rbp, rsp\n    sub rsp, 256\n");
 
         reset_locals();
         in_function = 1;
 
-        for (i = 0; i < node->data.func_decl.param_count; ++i)
+        while (curr && p_idx < 4)
         {
-            thrive_ast *p_name = node->data.func_decl.params[i];
-            thrive_var *v = add_var(p_name->data.name.start, p_name->data.name.length);
-            printf("    mov [rbp%d], %s\n", v->offset, arg_regs[i]);
+            thrive_var *v = add_var(curr->data.name.start, curr->data.name.length);
+            printf("    mov [rbp%d], %s\n", v->offset, arg_regs[p_idx++]);
+            curr = curr->next;
         }
+        /* Note: Handle 5th+ params from [rbp + 16, 24, etc] if needed */
 
         gen_stmt(node->data.func_decl.body);
-
-        printf("    leave\n");
-        printf("    ret\n");
-
+        printf("    leave\n    ret\n");
         in_function = 0;
         break;
     }
@@ -576,20 +562,22 @@ void gen_stmt(thrive_ast *node)
 
 void gen_program(thrive_ast *node)
 {
+    thrive_ast *curr;
     u32 i;
 
     printf("default rel\n");
 
     /* Pass 1: Find and print all external declarations at the top */
-    for (i = 0; i < node->data.block.count; ++i)
+    curr = node->data.block.body;
+    while (curr)
     {
-        thrive_ast *stmt = node->data.block.items[i];
-        if (stmt->kind == THRIVE_AST_EXT_DECL)
+        if (curr->kind == THRIVE_AST_EXT_DECL)
         {
             printf("extern %.*s\n",
-                   stmt->data.ext_decl.name->data.name.length,
-                   stmt->data.ext_decl.name->data.name.start);
+                   curr->data.ext_decl.name->data.name.length,
+                   curr->data.ext_decl.name->data.name.start);
         }
+        curr = curr->next;
     }
 
     printf("\nsection .text\n");
@@ -602,22 +590,25 @@ void gen_program(thrive_ast *node)
     reset_locals();
 
     /* Pass 2: Main logic (Skip FUNC_DECL and EXT_DECL) */
-    for (i = 0; i < node->data.block.count; ++i)
+    curr = node->data.block.body;
+    while (curr)
     {
-        thrive_ast *stmt = node->data.block.items[i];
-        if (stmt->kind != THRIVE_AST_FUNC_DECL && stmt->kind != THRIVE_AST_EXT_DECL)
+        if (curr->kind != THRIVE_AST_FUNC_DECL && curr->kind != THRIVE_AST_EXT_DECL)
         {
-            gen_stmt(stmt);
+            gen_stmt(curr);
         }
+        curr = curr->next;
     }
 
     /* Pass 3: Internal Function Definitions */
-    for (i = 0; i < node->data.block.count; ++i)
+    curr = node->data.block.body;
+    while (curr)
     {
-        if (node->data.block.items[i]->kind == THRIVE_AST_FUNC_DECL)
+        if (curr->kind == THRIVE_AST_FUNC_DECL)
         {
-            gen_stmt(node->data.block.items[i]);
+            gen_stmt(curr);
         }
+        curr = curr->next;
     }
 
     /* Emit Data Section for Strings */
@@ -850,31 +841,32 @@ THRIVE_API void thrive_ast_print(thrive_ast *node, u32 depth)
 
     case THRIVE_AST_BLOCK:
     {
-        u32 i;
-
+        thrive_ast *curr = node->data.block.body;
         printf("BLOCK\n");
-
-        for (i = 0; i < node->data.block.count; ++i)
+        while (curr)
         {
-            thrive_ast_print(node->data.block.items[i], depth + 1);
+            thrive_ast_print(curr, depth + 1);
+            curr = curr->next;
         }
         break;
     }
 
     case THRIVE_AST_FUNC_DECL:
     {
-        u32 i;
+        thrive_ast *curr;
         printf("FUNC_DECL %.*s\n",
                node->data.func_decl.name->data.name.length,
                node->data.func_decl.name->data.name.start);
 
-        if (node->data.func_decl.param_count > 0)
+        curr = node->data.func_decl.params;
+        if (curr)
         {
             thrive_print_indent(depth + 1);
             printf("PARAMS:\n");
-            for (i = 0; i < node->data.func_decl.param_count; ++i)
+            while (curr)
             {
-                thrive_ast_print(node->data.func_decl.params[i], depth + 2);
+                thrive_ast_print(curr, depth + 2);
+                curr = curr->next;
             }
         }
 
@@ -886,18 +878,19 @@ THRIVE_API void thrive_ast_print(thrive_ast *node, u32 depth)
 
     case THRIVE_AST_FUNC_CALL:
     {
-        u32 i;
+        thrive_ast *curr = node->data.func_call.args;
         printf("FUNC_CALL %.*s\n",
                node->data.func_call.name->data.name.length,
                node->data.func_call.name->data.name.start);
 
-        if (node->data.func_call.arg_count > 0)
+        if (curr)
         {
             thrive_print_indent(depth + 1);
             printf("ARGS:\n");
-            for (i = 0; i < node->data.func_call.arg_count; ++i)
+            while (curr)
             {
-                thrive_ast_print(node->data.func_call.args[i], depth + 2);
+                thrive_ast_print(curr, depth + 2);
+                curr = curr->next;
             }
         }
         break;
@@ -905,9 +898,22 @@ THRIVE_API void thrive_ast_print(thrive_ast *node, u32 depth)
 
     case THRIVE_AST_EXT_DECL:
     {
+        thrive_ast *curr = node->data.ext_decl.params;
+
         printf("EXT_DECL %.*s\n",
                node->data.ext_decl.name->data.name.length,
                node->data.ext_decl.name->data.name.start);
+
+        if (curr)
+        {
+            thrive_print_indent(depth + 1);
+            printf("PARAMS:\n");
+            while (curr)
+            {
+                thrive_ast_print(curr, depth + 2);
+                curr = curr->next;
+            }
+        }
         break;
     }
 
@@ -1222,7 +1228,6 @@ int main(void)
     printf("[size] thrive_status    = %10d\n", (u32)sizeof(thrive_status));
     printf("[size] thrive_token     = %10d\n", (u32)sizeof(thrive_token));
     printf("[size] thrive_state     = %10d\n", (u32)sizeof(thrive_state));
-    printf("[size] thrive_ast_block = %10d\n", (u32)sizeof(thrive_ast_block));
     printf("[size] thrive_ast       = %10d\n", (u32)sizeof(thrive_ast));
     printf("--------------------\n");
 
