@@ -679,16 +679,16 @@ void print_token(thrive_token token)
     switch (token.kind)
     {
     case THRIVE_TOKEN_KIND_EOF:
-        printf("%-10s", "EOF");
+        printf("%-12s", "EOF");
         break;
     case THRIVE_TOKEN_KIND_NEW_LINE:
-        printf("%-10s", "NEWLINE");
+        printf("%-12s", "NEWLINE");
         break;
     case THRIVE_TOKEN_KIND_INT:
-        printf("%-10s| %d", "INT", token.value.number);
+        printf("%-12s| %d", "INT", token.value.number);
         break;
     default:
-        printf("%-10s| %.*s", thrive_token_kind_names[token.kind], token.end - token.start, token.start);
+        printf("%-12s| %.*s", thrive_token_kind_names[token.kind], token.end - token.start, token.start);
         break;
     }
 
@@ -1255,8 +1255,10 @@ int main(void)
 
         ast = thrive_ast_parse(&s);
 
+        /*
         printf("=== BEFORE ===\n");
         thrive_ast_print(ast, 0);
+        */
 
         ast = thrive_ast_fold(ast);
 

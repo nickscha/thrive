@@ -282,25 +282,25 @@ typedef struct thrive_state
 
 typedef enum thrive_ast_kind
 {
-    THRIVE_AST_INT,
-    THRIVE_AST_NAME,
-    THRIVE_AST_BINARY,
-    THRIVE_AST_UNARY,   /* -a */
-    THRIVE_AST_TERNARY, /* 1 > a ? 1 : 0 */
-    THRIVE_AST_IF,
-    THRIVE_AST_FOR,
-    THRIVE_AST_BREAK,
-    THRIVE_AST_CONTINUE,
-    THRIVE_AST_DEREF,
-    THRIVE_AST_ADDR_OF,
-    THRIVE_AST_RETURN,
-    THRIVE_AST_ASSIGN,
-    THRIVE_AST_DECL,
-    THRIVE_AST_BLOCK,
-    THRIVE_AST_FUNC_DECL,
-    THRIVE_AST_FUNC_CALL,
-    THRIVE_AST_EXT_DECL,
-    THRIVE_AST_STRING
+    THRIVE_AST_INT,       /* 123 */
+    THRIVE_AST_NAME,      /* my_var */
+    THRIVE_AST_BINARY,    /* a + b */
+    THRIVE_AST_UNARY,     /* -a */
+    THRIVE_AST_TERNARY,   /* 1 > a ? 1 : 0 */
+    THRIVE_AST_IF,        /* if (cond) { ... } else { ... } */
+    THRIVE_AST_FOR,       /* for (init : cond : step) { ... } */
+    THRIVE_AST_BREAK,     /* break */
+    THRIVE_AST_CONTINUE,  /* continue */
+    THRIVE_AST_DEREF,     /* *ptr */
+    THRIVE_AST_ADDR_OF,   /* &var */
+    THRIVE_AST_RETURN,    /* ret expr */
+    THRIVE_AST_ASSIGN,    /* a = b (or a += b) */
+    THRIVE_AST_DECL,      /* u32 a = 10 */
+    THRIVE_AST_BLOCK,     /* { stmt1 stmt2 } */
+    THRIVE_AST_FUNC_DECL, /* u32 func(u32 a) { ... } */
+    THRIVE_AST_FUNC_CALL, /* func(a : b) */
+    THRIVE_AST_EXT_DECL,  /* ext u32 func(u32 a) */
+    THRIVE_AST_STRING     /* "deadbeef" */
 
 } thrive_ast_kind;
 
@@ -819,7 +819,7 @@ THRIVE_API THRIVE_INLINE thrive_ast *thrive_ast_create(thrive_state *state, thri
     {
         thrive_error(state, THRIVE_STATUS_ERROR_MEMORY, "AST pool exhausted");
     }
-    
+
     node = &state->ast_pool[state->ast_count++];
     node->kind = kind;
 
@@ -1058,22 +1058,20 @@ THRIVE_API thrive_ast *thrive_ast_parse_expr_bp(thrive_state *state, i32 min_bp)
     {
         thrive_token_kind op = state->current.kind;
         thrive_token_next(state);
-
         left = thrive_ast_create(state, THRIVE_AST_UNARY);
 
-        if (op == THRIVE_TOKEN_KIND_MUL)
+        switch (op)
         {
+        case THRIVE_TOKEN_KIND_MUL:
             left->kind = THRIVE_AST_DEREF;
-        }
-        else if (op == THRIVE_TOKEN_KIND_AND_BITWISE)
-        {
+            break;
+        case THRIVE_TOKEN_KIND_AND_BITWISE:
             left->kind = THRIVE_AST_ADDR_OF;
-        }
-        else
-        {
+            break;
+        default:
             left->data.unary.op = op;
+            break;
         }
-
         left->data.unary.expr = thrive_ast_parse_expr_bp(state, p_rbp);
     }
     else
@@ -1086,12 +1084,7 @@ THRIVE_API thrive_ast *thrive_ast_parse_expr_bp(thrive_state *state, i32 min_bp)
         thrive_token_kind op = state->current.kind;
         i32 l_bp, r_bp;
 
-        if (!thrive_ast_infix_bp(op, &l_bp, &r_bp))
-        {
-            break;
-        }
-
-        if (l_bp < min_bp)
+        if (!thrive_ast_infix_bp(op, &l_bp, &r_bp) || l_bp < min_bp)
         {
             break;
         }
@@ -1582,6 +1575,18 @@ THRIVE_API thrive_ast *thrive_ast_fold(thrive_ast *node)
                 break;
             case THRIVE_TOKEN_KIND_LT:
                 result = (a < b);
+                break;
+            case THRIVE_TOKEN_KIND_AND_BITWISE:
+                result = a & b;
+                break;
+            case THRIVE_TOKEN_KIND_OR_BITWISE:
+                result = a | b;
+                break;
+            case THRIVE_TOKEN_KIND_LSHIFT:
+                result = a << b;
+                break;
+            case THRIVE_TOKEN_KIND_RSHIFT:
+                result = a >> b;
                 break;
             default:
                 return node;
