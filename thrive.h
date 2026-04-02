@@ -812,7 +812,7 @@ struct thrive_ast
     } data;
 };
 
-THRIVE_API thrive_ast *thrive_ast_new(thrive_state *state)
+THRIVE_API THRIVE_INLINE thrive_ast *thrive_ast_new(thrive_state *state)
 {
     if (state->ast_count >= state->ast_capacity)
     {
@@ -822,6 +822,18 @@ THRIVE_API thrive_ast *thrive_ast_new(thrive_state *state)
     }
 
     return &state->ast_pool[state->ast_count++];
+}
+
+THRIVE_API THRIVE_INLINE thrive_ast *thrive_ast_create(thrive_state *state, thrive_ast_kind kind)
+{
+    thrive_ast *node = thrive_ast_new(state);
+
+    if (node)
+    {
+        node->kind = kind;
+    }
+
+    return node;
 }
 
 /*
@@ -849,22 +861,17 @@ THRIVE_API thrive_ast *thrive_ast_parse_primary(thrive_state *state)
 
     if (tok.kind == THRIVE_TOKEN_KIND_INT)
     {
-        thrive_ast *node = thrive_ast_new(state);
+        thrive_ast *node = thrive_ast_create(state, THRIVE_AST_INT);
         THRIVE_CHECK_RET(state, 0);
-
-        node->kind = THRIVE_AST_INT;
         node->data.int_value = tok.value.number;
-
         thrive_token_next(state);
         return node;
     }
 
     if (tok.kind == THRIVE_TOKEN_KIND_NAME)
     {
-        thrive_ast *node = thrive_ast_new(state);
+        thrive_ast *node = thrive_ast_create(state, THRIVE_AST_NAME);
         THRIVE_CHECK_RET(state, 0);
-
-        node->kind = THRIVE_AST_NAME;
         node->data.name.start = tok.start;
         node->data.name.length = (u32)(tok.end - tok.start);
 
@@ -873,10 +880,8 @@ THRIVE_API thrive_ast *thrive_ast_parse_primary(thrive_state *state)
         /* function call parsing */
         if (thrive_token_accept(state, THRIVE_TOKEN_KIND_LPAREN))
         {
-            thrive_ast *call_node = thrive_ast_new(state);
+            thrive_ast *call_node = thrive_ast_create(state, THRIVE_AST_FUNC_CALL);
             THRIVE_CHECK_RET(state, 0);
-
-            call_node->kind = THRIVE_AST_FUNC_CALL;
             call_node->data.func_call.name = node;
             call_node->data.func_call.arg_count = 0;
 
@@ -930,9 +935,8 @@ THRIVE_API thrive_ast *thrive_ast_parse_primary(thrive_state *state)
 
     if (tok.kind == THRIVE_TOKEN_KIND_CHAR)
     {
-        thrive_ast *node = thrive_ast_new(state);
+        thrive_ast *node = thrive_ast_create(state, THRIVE_AST_INT);
         THRIVE_CHECK_RET(state, 0);
-        node->kind = THRIVE_AST_INT; /* Treat chars natively as integers */
         node->data.int_value = tok.value.number;
         thrive_token_next(state);
         return node;
@@ -940,9 +944,8 @@ THRIVE_API thrive_ast *thrive_ast_parse_primary(thrive_state *state)
 
     if (tok.kind == THRIVE_TOKEN_KIND_STRING)
     {
-        thrive_ast *node = thrive_ast_new(state);
+        thrive_ast *node = thrive_ast_create(state, THRIVE_AST_STRING);
         THRIVE_CHECK_RET(state, 0);
-        node->kind = THRIVE_AST_STRING;
         node->data.string_lit.start = tok.start;
         node->data.string_lit.length = (u32)(tok.end - tok.start);
         thrive_token_next(state);
@@ -1121,10 +1124,8 @@ THRIVE_API thrive_ast *thrive_ast_parse_expr_bp(thrive_state *state, i32 min_bp)
 
         if (op == THRIVE_TOKEN_KIND_INC || op == THRIVE_TOKEN_KIND_DEC)
         {
-            thrive_ast *node = thrive_ast_new(state);
+            thrive_ast *node = thrive_ast_create(state, THRIVE_AST_UNARY);
             THRIVE_CHECK_RET(state, 0);
-
-            node->kind = THRIVE_AST_UNARY;
             node->data.unary.op = op;
             node->data.unary.expr = left;
             left = node;
@@ -1147,10 +1148,8 @@ THRIVE_API thrive_ast *thrive_ast_parse_expr_bp(thrive_state *state, i32 min_bp)
 
             THRIVE_CHECK_RET(state, 0);
 
-            node = thrive_ast_new(state);
+            node = thrive_ast_create(state, THRIVE_AST_TERNARY);
             THRIVE_CHECK_RET(state, 0);
-
-            node->kind = THRIVE_AST_TERNARY;
             node->data.ternary.cond = left;
             node->data.ternary.then_expr = then_expr;
             node->data.ternary.else_expr = else_expr;
@@ -1169,10 +1168,8 @@ THRIVE_API thrive_ast *thrive_ast_parse_expr_bp(thrive_state *state, i32 min_bp)
 
             if (op == THRIVE_TOKEN_KIND_ASSIGN)
             {
-                thrive_ast *node = thrive_ast_new(state);
+                thrive_ast *node = thrive_ast_create(state, THRIVE_AST_ASSIGN);
                 THRIVE_CHECK_RET(state, 0);
-
-                node->kind = THRIVE_AST_ASSIGN;
                 node->data.assign.left = left;
                 node->data.assign.right = right;
 
@@ -1180,11 +1177,9 @@ THRIVE_API thrive_ast *thrive_ast_parse_expr_bp(thrive_state *state, i32 min_bp)
             }
             else
             {
-                thrive_ast *binary = thrive_ast_new(state);
-                thrive_ast *assign = thrive_ast_new(state);
+                thrive_ast *binary = thrive_ast_create(state, THRIVE_AST_BINARY);
+                thrive_ast *assign = thrive_ast_create(state, THRIVE_AST_ASSIGN);
                 THRIVE_CHECK_RET(state, 0);
-
-                binary->kind = THRIVE_AST_BINARY;
                 binary->data.binary.left = left;
                 binary->data.binary.right = right;
 
@@ -1205,7 +1200,6 @@ THRIVE_API thrive_ast *thrive_ast_parse_expr_bp(thrive_state *state, i32 min_bp)
                     binary->data.binary.op = THRIVE_TOKEN_KIND_DIV;
                 }
 
-                assign->kind = THRIVE_AST_ASSIGN;
                 assign->data.assign.left = left;
                 assign->data.assign.right = binary;
 
@@ -1215,11 +1209,8 @@ THRIVE_API thrive_ast *thrive_ast_parse_expr_bp(thrive_state *state, i32 min_bp)
         else
         {
             thrive_ast *right = thrive_ast_parse_expr_bp(state, r_bp);
-            thrive_ast *node = thrive_ast_new(state);
-
+            thrive_ast *node = thrive_ast_create(state, THRIVE_AST_BINARY);
             THRIVE_CHECK_RET(state, 0);
-
-            node->kind = THRIVE_AST_BINARY;
             node->data.binary.op = op;
             node->data.binary.left = left;
             node->data.binary.right = right;
@@ -1298,9 +1289,8 @@ THRIVE_API thrive_ast *thrive_ast_parse_statement(thrive_state *state)
     {
         thrive_token name_tok;
 
-        thrive_ast *node = thrive_ast_new(state);
+        thrive_ast *node = thrive_ast_create(state, THRIVE_AST_EXT_DECL);
         THRIVE_CHECK_RET(state, 0);
-        node->kind = THRIVE_AST_EXT_DECL;
         node->data.ext_decl.param_count = 0;
 
         /* Skip return type for now */
@@ -1315,8 +1305,8 @@ THRIVE_API thrive_ast *thrive_ast_parse_statement(thrive_state *state)
             return 0;
         }
 
-        node->data.ext_decl.name = thrive_ast_new(state);
-        node->data.ext_decl.name->kind = THRIVE_AST_NAME;
+        node->data.ext_decl.name = thrive_ast_create(state, THRIVE_AST_NAME);
+        THRIVE_CHECK_RET(state, 0);
         node->data.ext_decl.name->data.name.start = name_tok.start;
         node->data.ext_decl.name->data.name.length = (u32)(name_tok.end - name_tok.start);
 
@@ -1345,9 +1335,8 @@ THRIVE_API thrive_ast *thrive_ast_parse_statement(thrive_state *state)
                 return 0;
             }
 
-            p_node = thrive_ast_new(state);
+            p_node = thrive_ast_create(state, THRIVE_AST_NAME);
             THRIVE_CHECK_RET(state, 0);
-            p_node->kind = THRIVE_AST_NAME;
             p_node->data.name.start = p_tok.start;
             p_node->data.name.length = (u32)(p_tok.end - p_tok.start);
 
@@ -1370,10 +1359,8 @@ THRIVE_API thrive_ast *thrive_ast_parse_statement(thrive_state *state)
     /* return */
     if (thrive_token_accept(state, THRIVE_TOKEN_KIND_KEYWORD_RET))
     {
-        thrive_ast *node = thrive_ast_new(state);
+        thrive_ast *node = thrive_ast_create(state, THRIVE_AST_RETURN);
         THRIVE_CHECK_RET(state, 0);
-
-        node->kind = THRIVE_AST_RETURN;
         node->data.ret.expr = thrive_ast_parse_expr(state);
         return node;
     }
@@ -1400,20 +1387,16 @@ THRIVE_API thrive_ast *thrive_ast_parse_statement(thrive_state *state)
             return 0;
         }
 
-        name = thrive_ast_new(state);
+        name = thrive_ast_create(state, THRIVE_AST_NAME);
         THRIVE_CHECK_RET(state, 0);
-
-        name->kind = THRIVE_AST_NAME;
         name->data.name.start = name_tok.start;
         name->data.name.length = (u32)(name_tok.end - name_tok.start);
 
         /* function declaration */
         if (thrive_token_accept(state, THRIVE_TOKEN_KIND_LPAREN))
         {
-            node = thrive_ast_new(state);
+            node = thrive_ast_create(state, THRIVE_AST_FUNC_DECL);
             THRIVE_CHECK_RET(state, 0);
-
-            node->kind = THRIVE_AST_FUNC_DECL;
             node->data.func_decl.name = name;
             node->data.func_decl.param_count = 0;
 
@@ -1428,14 +1411,13 @@ THRIVE_API thrive_ast *thrive_ast_parse_statement(thrive_state *state)
                     thrive_token_accept(state, THRIVE_TOKEN_KIND_MUL);
 
                     p_tok = state->current;
-                    p_name = thrive_ast_new(state);
+                    p_name = thrive_ast_create(state, THRIVE_AST_NAME);
 
                     if (!thrive_token_expect(state, THRIVE_TOKEN_KIND_NAME))
                     {
                         return 0;
                     }
 
-                    p_name->kind = THRIVE_AST_NAME;
                     p_name->data.name.start = p_tok.start;
                     p_name->data.name.length = (u32)(p_tok.end - p_tok.start);
 
@@ -1460,9 +1442,8 @@ THRIVE_API thrive_ast *thrive_ast_parse_statement(thrive_state *state)
         }
 
         /* Normal Variable Declaration */
-        node = thrive_ast_new(state);
+        node = thrive_ast_create(state, THRIVE_AST_DECL);
         THRIVE_CHECK_RET(state, 0);
-        node->kind = THRIVE_AST_DECL;
         node->data.decl.name = name;
         node->data.decl.value = 0;
 
@@ -1476,10 +1457,8 @@ THRIVE_API thrive_ast *thrive_ast_parse_statement(thrive_state *state)
 
     if (thrive_token_accept(state, THRIVE_TOKEN_KIND_KEYWORD_IF))
     {
-        thrive_ast *node = thrive_ast_new(state);
+        thrive_ast *node = thrive_ast_create(state, THRIVE_AST_IF);
         THRIVE_CHECK_RET(state, 0);
-
-        node->kind = THRIVE_AST_IF;
 
         if (!thrive_token_expect(state, THRIVE_TOKEN_KIND_LPAREN))
         {
@@ -1529,31 +1508,27 @@ THRIVE_API thrive_ast *thrive_ast_parse_statement(thrive_state *state)
 
     if (thrive_token_accept(state, THRIVE_TOKEN_KIND_KEYWORD_BREAK))
     {
-        thrive_ast *node = thrive_ast_new(state);
+        thrive_ast *node = thrive_ast_create(state, THRIVE_AST_BREAK);
         THRIVE_CHECK_RET(state, 0);
-
-        node->kind = THRIVE_AST_BREAK;
         return node;
     }
 
     if (thrive_token_accept(state, THRIVE_TOKEN_KIND_KEYWORD_CONTINUE))
     {
-        thrive_ast *node = thrive_ast_new(state);
+        thrive_ast *node = thrive_ast_create(state, THRIVE_AST_CONTINUE);
         THRIVE_CHECK_RET(state, 0);
-
-        node->kind = THRIVE_AST_CONTINUE;
         return node;
     }
 
     if (thrive_token_accept(state, THRIVE_TOKEN_KIND_KEYWORD_FOR))
     {
-        thrive_ast *node = thrive_ast_new(state);
+        thrive_ast *node = thrive_ast_create(state, THRIVE_AST_FOR);
         THRIVE_CHECK_RET(state, 0);
 
-        node->kind = THRIVE_AST_FOR;
-
         if (!thrive_token_expect(state, THRIVE_TOKEN_KIND_LPAREN))
+        {
             return 0;
+        }
 
         /* 1. Initialization (e.g., i = 0) */
         node->data.for_loop.init = thrive_ast_parse_expr(state);
@@ -1601,10 +1576,8 @@ THRIVE_API thrive_ast *thrive_ast_parse_statement(thrive_state *state)
 
 THRIVE_API thrive_ast *thrive_ast_parse_program(thrive_state *state)
 {
-    thrive_ast *node = thrive_ast_new(state);
+    thrive_ast *node = thrive_ast_create(state, THRIVE_AST_BLOCK);
     THRIVE_CHECK_RET(state, 0);
-
-    node->kind = THRIVE_AST_BLOCK;
     node->data.block.count = 0;
 
     thrive_token_next(state);
