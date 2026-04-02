@@ -1086,12 +1086,6 @@ void emit_movzx_rax_al()
 int main(void)
 {
     s8 *source_code =
-        "ext u32 ExitProcess(u32 uExitCode)\n"
-        "u32 i = (1 + 2) * 2 - 2\n"
-        "ExitProcess(i)\n";
-
-    /*
-    s8 *source_code =
         "ext u32 MessageBoxA(u32 hWnd : s8 *lpText : s8 *lpCaption : u32 uType)\n"
         "ext u32 ExitProcess(u32 uExitCode)\n"
         "\n"
@@ -1102,6 +1096,12 @@ int main(void)
         "for (i = 0 : i < (1 + 2) : ++i)\n"
         "  MessageBoxA(0 : text : caption : 0)\n"
         "ExitProcess(0)\n";
+
+    /*
+    s8 *source_code =
+        "ext u32 ExitProcess(u32 uExitCode)\n"
+        "u32 i = (1 + 2) * 2 - 2\n"
+        "ExitProcess(i)\n";
 
     s8 *source_code =
         "ext u32 ExitProcess(u32 uExitCode)\n"
