@@ -850,7 +850,6 @@ THRIVE_API thrive_ast *thrive_ast_parse_primary(thrive_state *state)
     if (tok.kind == THRIVE_TOKEN_KIND_INT)
     {
         thrive_ast *node = thrive_ast_create(state, THRIVE_AST_INT);
-
         node->data.int_value = tok.value.number;
         thrive_token_next(state);
         return node;
@@ -859,42 +858,9 @@ THRIVE_API thrive_ast *thrive_ast_parse_primary(thrive_state *state)
     if (tok.kind == THRIVE_TOKEN_KIND_NAME)
     {
         thrive_ast *node = thrive_ast_create(state, THRIVE_AST_NAME);
-
         node->data.name.start = tok.start;
         node->data.name.length = (u32)(tok.end - tok.start);
-
         thrive_token_next(state);
-
-        /* function call parsing */
-        if (thrive_token_accept(state, THRIVE_TOKEN_KIND_LPAREN))
-        {
-            thrive_ast *call_node = thrive_ast_create(state, THRIVE_AST_FUNC_CALL);
-
-            call_node->data.func_call.name = node;
-            call_node->data.func_call.arg_count = 0;
-
-            while (state->current.kind != THRIVE_TOKEN_KIND_RPAREN &&
-                   state->current.kind != THRIVE_TOKEN_KIND_EOF)
-            {
-                if (call_node->data.func_call.arg_count >= 8)
-                {
-                    thrive_error(state, THRIVE_STATUS_ERROR_SYNTAX, "Too many arguments");
-                    return 0;
-                }
-
-                call_node->data.func_call.args[call_node->data.func_call.arg_count++] = thrive_ast_parse_expr(state);
-
-                if (!thrive_token_accept(state, THRIVE_TOKEN_KIND_COLON))
-                {
-                    break;
-                }
-            }
-
-            thrive_token_expect(state, THRIVE_TOKEN_KIND_RPAREN);
-
-            return call_node;
-        }
-
         return node;
     }
 
@@ -1044,6 +1010,12 @@ THRIVE_API i32 thrive_ast_infix_bp(thrive_token_kind op, i32 *l_bp, i32 *r_bp)
         *r_bp = 121;
         return 1;
 
+    /* Postfix / Call: Highest priority */
+    case THRIVE_TOKEN_KIND_LPAREN:
+        *l_bp = 150;
+        *r_bp = 151;
+        return 1;
+
     default:
         return 0;
     }
@@ -1091,7 +1063,27 @@ THRIVE_API thrive_ast *thrive_ast_parse_expr_bp(thrive_state *state, i32 min_bp)
 
         thrive_token_next(state);
 
-        if (op == THRIVE_TOKEN_KIND_INC || op == THRIVE_TOKEN_KIND_DEC)
+        if (op == THRIVE_TOKEN_KIND_LPAREN)
+        {
+            thrive_ast *call_node = thrive_ast_create(state, THRIVE_AST_FUNC_CALL);
+            call_node->data.func_call.name = left; /* 'left' is the expr before the '(' */
+            call_node->data.func_call.arg_count = 0;
+
+            while (state->current.kind != THRIVE_TOKEN_KIND_RPAREN &&
+                   state->current.kind != THRIVE_TOKEN_KIND_EOF)
+            {
+                call_node->data.func_call.args[call_node->data.func_call.arg_count++] = thrive_ast_parse_expr(state);
+
+                if (!thrive_token_accept(state, THRIVE_TOKEN_KIND_COLON))
+                {
+                    break;
+                }
+            }
+
+            thrive_token_expect(state, THRIVE_TOKEN_KIND_RPAREN);
+            left = call_node;
+        }
+        else if (op == THRIVE_TOKEN_KIND_INC || op == THRIVE_TOKEN_KIND_DEC)
         {
             thrive_ast *node = thrive_ast_create(state, THRIVE_AST_UNARY);
 
