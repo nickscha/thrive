@@ -746,7 +746,13 @@ repeat:
 
         #undef THRIVE_TOKEN_CASE_3
 
-        default:   { state->source_code++; state->column++; token.kind = THRIVE_TOKEN_KIND_INVALID;  break; }
+        default:  
+        { 
+            state->source_code++; 
+            state->column++; 
+            token.kind = THRIVE_TOKEN_KIND_INVALID;  
+            break; 
+        }
     }
     /* clang-format on */
 
@@ -882,7 +888,6 @@ THRIVE_API thrive_ast *thrive_ast_parse_primary(thrive_state *state)
     if (tok.kind == THRIVE_TOKEN_KIND_CHAR)
     {
         thrive_ast *node = thrive_ast_create(state, THRIVE_AST_INT);
-
         node->data.int_value = tok.value.number;
         thrive_token_next(state);
         return node;
@@ -891,7 +896,6 @@ THRIVE_API thrive_ast *thrive_ast_parse_primary(thrive_state *state)
     if (tok.kind == THRIVE_TOKEN_KIND_STRING)
     {
         thrive_ast *node = thrive_ast_create(state, THRIVE_AST_STRING);
-
         node->data.string_lit.start = tok.start;
         node->data.string_lit.length = (u32)(tok.end - tok.start);
         thrive_token_next(state);
@@ -1239,7 +1243,6 @@ THRIVE_API thrive_ast *thrive_ast_parse_statement(thrive_state *state)
         thrive_token_expect(state, THRIVE_TOKEN_KIND_NAME);
 
         node->data.ext_decl.name = thrive_ast_create(state, THRIVE_AST_NAME);
-
         node->data.ext_decl.name->data.name.start = name_tok.start;
         node->data.ext_decl.name->data.name.length = (u32)(name_tok.end - name_tok.start);
 
@@ -1261,7 +1264,6 @@ THRIVE_API thrive_ast *thrive_ast_parse_statement(thrive_state *state)
             thrive_token_expect(state, THRIVE_TOKEN_KIND_NAME);
 
             p_node = thrive_ast_create(state, THRIVE_AST_NAME);
-
             p_node->data.name.start = p_tok.start;
             p_node->data.name.length = (u32)(p_tok.end - p_tok.start);
 
@@ -1306,7 +1308,6 @@ THRIVE_API thrive_ast *thrive_ast_parse_statement(thrive_state *state)
         thrive_token_expect(state, THRIVE_TOKEN_KIND_NAME);
 
         name = thrive_ast_create(state, THRIVE_AST_NAME);
-
         name->data.name.start = name_tok.start;
         name->data.name.length = (u32)(name_tok.end - name_tok.start);
 
@@ -1314,7 +1315,6 @@ THRIVE_API thrive_ast *thrive_ast_parse_statement(thrive_state *state)
         if (thrive_token_accept(state, THRIVE_TOKEN_KIND_LPAREN))
         {
             node = thrive_ast_create(state, THRIVE_AST_FUNC_DECL);
-
             node->data.func_decl.name = name;
             node->data.func_decl.param_count = 0;
 
@@ -1354,7 +1354,6 @@ THRIVE_API thrive_ast *thrive_ast_parse_statement(thrive_state *state)
 
         /* Normal Variable Declaration */
         node = thrive_ast_create(state, THRIVE_AST_DECL);
-
         node->data.decl.name = name;
         node->data.decl.value = 0;
 
@@ -1659,6 +1658,7 @@ THRIVE_API thrive_ast *thrive_ast_fold(thrive_ast *node)
 
         node->data.if_stmt.then_branch = thrive_ast_fold(node->data.if_stmt.then_branch);
         node->data.if_stmt.else_branch = thrive_ast_fold(node->data.if_stmt.else_branch);
+
         return node;
     }
 
@@ -1680,6 +1680,7 @@ THRIVE_API thrive_ast *thrive_ast_fold(thrive_ast *node)
 
         node->data.ternary.then_expr = thrive_ast_fold(node->data.ternary.then_expr);
         node->data.ternary.else_expr = thrive_ast_fold(node->data.ternary.else_expr);
+
         return node;
     }
 
