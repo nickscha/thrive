@@ -1133,6 +1133,7 @@ THRIVE_API void thrive_panic(thrive_status status)
 int main(void)
 {
     s8 *source_code =
+        "; this is a line comment\n"
         "ext u32 MessageBoxA(u32 hWnd : s8 *lpText : s8 *lpCaption : u32 uType)\n"
         "ext u32 ExitProcess(u32 uExitCode)\n"
         "\n"
