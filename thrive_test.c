@@ -1083,6 +1083,53 @@ void emit_movzx_rax_al()
  * # [SECTION] Testing
  * #############################################################################
  */
+THRIVE_API void thrive_panic(thrive_status status)
+{
+    printf("[error] %s\n", status.message);
+    printf(" --> input:%u:%u\n", status.line, status.column);
+    printf("    |\n");
+    printf("%3d | ", status.line);
+
+    s8 *p = status.line_start;
+
+    while (*p && *p != '\n')
+    {
+        putchar(*p);
+        p++;
+    }
+    putchar('\n');
+    printf("    | ");
+
+    u32 offset = (u32)(status.token_start - status.line_start);
+
+    u32 i;
+
+    for (i = 0; i < offset; ++i)
+    {
+        putchar(' ');
+    }
+
+    u32 len = (u32)(status.token_end - status.token_start);
+
+    if (len == 0)
+    {
+        len = 1;
+    }
+
+    putchar('^');
+
+    for (i = 1; i < len; ++i)
+    {
+        putchar('~');
+    }
+
+    printf(" %s", status.message);
+
+    putchar('\n');
+
+    exit(1);
+}
+
 int main(void)
 {
     s8 *source_code =
@@ -1207,52 +1254,6 @@ int main(void)
         s.ast_capacity = 1024;
 
         ast = thrive_ast_parse(&s);
-
-        if (s.status.type != THRIVE_STATUS_OK)
-        {
-            printf("[error] %s\n", s.status.message);
-            printf(" --> input:%u:%u\n", s.status.line, s.status.column);
-            printf("    |\n");
-            printf("%3d | ", s.status.line);
-
-            s8 *p = s.status.line_start;
-            while (*p && *p != '\n')
-            {
-                putchar(*p);
-                p++;
-            }
-            putchar('\n');
-            printf("    | ");
-
-            u32 offset = (u32)(s.status.token_start - s.status.line_start);
-
-            u32 i;
-
-            for (i = 0; i < offset; ++i)
-            {
-                putchar(' ');
-            }
-
-            u32 len = (u32)(s.status.token_end - s.status.token_start);
-
-            if (len == 0)
-            {
-                len = 1;
-            }
-
-            putchar('^');
-
-            for (i = 1; i < len; ++i)
-            {
-                putchar('~');
-            }
-
-            printf(" %s", s.status.message);
-
-            putchar('\n');
-
-            return 1;
-        }
 
         printf("=== BEFORE ===\n");
         thrive_ast_print(ast, 0);
