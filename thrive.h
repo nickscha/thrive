@@ -103,6 +103,8 @@ THRIVE_STATIC_ASSERT(sizeof(i32) == 4, i32_size_must_be_4);
 THRIVE_STATIC_ASSERT(sizeof(f32) == 4, f32_size_must_be_4);
 THRIVE_STATIC_ASSERT(sizeof(f64) == 8, f64_size_must_be_8);
 
+#undef THRIVE_STATIC_ASSERT
+
 /* #############################################################################
  * # [SECTION] Helper Functions
  * #############################################################################
