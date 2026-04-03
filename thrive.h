@@ -473,6 +473,42 @@ THRIVE_API void thrive_error(thrive_state *state, thrive_status_type type, s8 *m
  * # [SECTION] Lexer
  * #############################################################################
  */
+THRIVE_API u32 thrive_token_is_digit_base(s8 c, u32 base)
+{
+    if (base == 10)
+    {
+        return c >= '0' && c <= '9';
+    }
+    else if (base == 16)
+    {
+        return (c >= '0' && c <= '9') ||
+               (c >= 'a' && c <= 'f') ||
+               (c >= 'A' && c <= 'F');
+    }
+    else if (base == 2)
+    {
+        return c == '0' || c == '1';
+    }
+    return 0;
+}
+
+THRIVE_API i32 thrive_token_digit_value(s8 c)
+{
+    if (c >= '0' && c <= '9')
+    {
+        return c - '0';
+    }
+    if (c >= 'a' && c <= 'f')
+    {
+        return 10 + (c - 'a');
+    }
+    if (c >= 'A' && c <= 'F')
+    {
+        return 10 + (c - 'A');
+    }
+    return 0;
+}
+
 THRIVE_API THRIVE_INLINE void thrive_token_next(thrive_state *state)
 {
     thrive_token token = {0};
@@ -592,11 +628,55 @@ repeat:
         case '7': case '8': case '9':
         {
             u32 value = 0;
+            u32 base = 10;
+            i32 seen_digit = 0;
 
-            while (thrive_char_is_digit(*state->source_code)) {
-                value *= 10;
-                value += (u32) (*state->source_code++ - '0');
+            /* Detect base */
+            if (*state->source_code == '0') 
+            {
+                s8 next = *(state->source_code + 1);
+
+                if (next == 'x' || next == 'X') 
+                {
+                    base = 16;
+                    state->source_code += 2;
+                    state->column += 2;
+                } 
+                else if (next == 'b' || next == 'B') 
+                {
+                    base = 2;
+                    state->source_code += 2;
+                    state->column += 2;
+                }
+            }
+
+            while (1) 
+            {
+                s8 c = *state->source_code;
+
+                if (c == '_') {
+                    state->source_code++;
+                    state->column++;
+                    continue;
+                }
+
+                if (!thrive_token_is_digit_base(c, base)) 
+                {
+                    break;
+                }
+
+                seen_digit = 1;
+
+                value *= base;
+                value += (u32)thrive_token_digit_value(c);
+
+                state->source_code++;
                 state->column++;
+            }
+
+            if (!seen_digit) 
+            {
+                /* TODO: if no digits after 0x / 0b */
             }
 
             token.kind = THRIVE_TOKEN_KIND_INT;

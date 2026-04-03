@@ -1147,7 +1147,7 @@ int main(void)
         "s8 *caption = \"Win32 Success\"\n"
         "\n"
         "u32 i = 0\n"
-        "for (i = 0 : i < (1 + 2) : ++i)\n"
+        "for (i = 0 : i < (0x01 + 0b10) : ++i)\n"
         "  MessageBoxA(0 : text : caption : 0)\n"
         "ExitProcess(0)\n";
 
