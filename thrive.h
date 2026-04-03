@@ -918,7 +918,7 @@ primary
 → assign
 → expr
 */
-THRIVE_API thrive_ast *thrive_ast_parse_expr(thrive_state *state);
+THRIVE_API thrive_ast *thrive_ast_parse_expression(thrive_state *state);
 
 THRIVE_API thrive_ast *thrive_ast_parse_primary(thrive_state *state)
 {
@@ -949,7 +949,7 @@ THRIVE_API thrive_ast *thrive_ast_parse_primary(thrive_state *state)
 
     if (thrive_token_accept(state, THRIVE_TOKEN_KIND_LPAREN))
     {
-        thrive_ast *expr = thrive_ast_parse_expr(state);
+        thrive_ast *expr = thrive_ast_parse_expression(state);
 
         thrive_token_expect(state, THRIVE_TOKEN_KIND_RPAREN);
 
@@ -979,7 +979,7 @@ THRIVE_API thrive_ast *thrive_ast_parse_primary(thrive_state *state)
 }
 
 /* Prefix binding powers (e.g., -a, !a) */
-THRIVE_API i32 thrive_ast_prefix_bp(thrive_token_kind kind, i32 *r_bp)
+THRIVE_API THRIVE_INLINE i32 thrive_ast_prefix_bp(thrive_token_kind kind, i32 *r_bp)
 {
     switch (kind)
     {
@@ -998,7 +998,7 @@ THRIVE_API i32 thrive_ast_prefix_bp(thrive_token_kind kind, i32 *r_bp)
 }
 
 /* Infix binding powers (e.g., a + b, a = b) */
-THRIVE_API i32 thrive_ast_infix_bp(thrive_token_kind op, i32 *l_bp, i32 *r_bp)
+THRIVE_API THRIVE_INLINE i32 thrive_ast_infix_bp(thrive_token_kind op, i32 *l_bp, i32 *r_bp)
 {
     switch (op)
     {
@@ -1096,7 +1096,7 @@ THRIVE_API i32 thrive_ast_infix_bp(thrive_token_kind op, i32 *l_bp, i32 *r_bp)
     }
 }
 
-THRIVE_API thrive_ast *thrive_ast_parse_expr_bp(thrive_state *state, i32 min_bp)
+THRIVE_API thrive_ast *thrive_ast_parse_expression_bp(thrive_state *state, i32 min_bp)
 {
     thrive_ast *left = 0;
     i32 p_rbp;
@@ -1119,7 +1119,7 @@ THRIVE_API thrive_ast *thrive_ast_parse_expr_bp(thrive_state *state, i32 min_bp)
             left->data.unary.op = op;
             break;
         }
-        left->data.unary.expr = thrive_ast_parse_expr_bp(state, p_rbp);
+        left->data.unary.expr = thrive_ast_parse_expression_bp(state, p_rbp);
     }
     else
     {
@@ -1149,7 +1149,7 @@ THRIVE_API thrive_ast *thrive_ast_parse_expr_bp(thrive_state *state, i32 min_bp)
 
             while (state->current.kind != THRIVE_TOKEN_KIND_RPAREN)
             {
-                thrive_ast *arg = thrive_ast_parse_expr(state);
+                thrive_ast *arg = thrive_ast_parse_expression(state);
                 *tail = arg;
                 tail = &arg->next;
 
@@ -1173,13 +1173,13 @@ THRIVE_API thrive_ast *thrive_ast_parse_expr_bp(thrive_state *state, i32 min_bp)
         }
         else if (op == THRIVE_TOKEN_KIND_QUESTION)
         {
-            thrive_ast *then_expr = thrive_ast_parse_expr_bp(state, 0);
+            thrive_ast *then_expr = thrive_ast_parse_expression_bp(state, 0);
             thrive_ast *else_expr;
             thrive_ast *node;
 
             thrive_token_expect(state, THRIVE_TOKEN_KIND_COLON);
 
-            else_expr = thrive_ast_parse_expr_bp(state, r_bp);
+            else_expr = thrive_ast_parse_expression_bp(state, r_bp);
 
             node = thrive_ast_create(state, THRIVE_AST_TERNARY);
             node->data.ternary.cond = left;
@@ -1194,7 +1194,7 @@ THRIVE_API thrive_ast *thrive_ast_parse_expr_bp(thrive_state *state, i32 min_bp)
                  op == THRIVE_TOKEN_KIND_MUL_ASSIGN ||
                  op == THRIVE_TOKEN_KIND_DIV_ASSIGN)
         {
-            thrive_ast *right = thrive_ast_parse_expr_bp(state, r_bp);
+            thrive_ast *right = thrive_ast_parse_expression_bp(state, r_bp);
 
             if (op == THRIVE_TOKEN_KIND_ASSIGN)
             {
@@ -1237,7 +1237,7 @@ THRIVE_API thrive_ast *thrive_ast_parse_expr_bp(thrive_state *state, i32 min_bp)
         }
         else
         {
-            thrive_ast *right = thrive_ast_parse_expr_bp(state, r_bp);
+            thrive_ast *right = thrive_ast_parse_expression_bp(state, r_bp);
 
             thrive_ast *node = thrive_ast_create(state, THRIVE_AST_BINARY);
             node->data.binary.op = op;
@@ -1251,14 +1251,14 @@ THRIVE_API thrive_ast *thrive_ast_parse_expr_bp(thrive_state *state, i32 min_bp)
     return left;
 }
 
-THRIVE_API thrive_ast *thrive_ast_parse_expr(thrive_state *state)
+THRIVE_API thrive_ast *thrive_ast_parse_expression(thrive_state *state)
 {
-    return thrive_ast_parse_expr_bp(state, 0);
+    return thrive_ast_parse_expression_bp(state, 0);
 }
 
 THRIVE_API thrive_ast *thrive_ast_parse_statement(thrive_state *state);
 
-THRIVE_API thrive_ast *thrive_ast_parse_block_stmt(thrive_state *state)
+THRIVE_API thrive_ast *thrive_ast_parse_block_statement(thrive_state *state)
 {
     thrive_ast *block_node = thrive_ast_create(state, THRIVE_AST_BLOCK);
     thrive_ast **tail = &block_node->data.block.body;
@@ -1291,7 +1291,7 @@ THRIVE_API thrive_ast *thrive_ast_parse_statement(thrive_state *state)
 {
     if (state->current.kind == THRIVE_TOKEN_KIND_LBRACE)
     {
-        return thrive_ast_parse_block_stmt(state);
+        return thrive_ast_parse_block_statement(state);
     }
 
     /* ext u32 Name(u32 a : u32 b) */
@@ -1353,8 +1353,7 @@ THRIVE_API thrive_ast *thrive_ast_parse_statement(thrive_state *state)
     if (thrive_token_accept(state, THRIVE_TOKEN_KIND_KEYWORD_RET))
     {
         thrive_ast *node = thrive_ast_create(state, THRIVE_AST_RETURN);
-
-        node->data.ret.expr = thrive_ast_parse_expr(state);
+        node->data.ret.expr = thrive_ast_parse_expression(state);
         return node;
     }
 
@@ -1420,7 +1419,7 @@ THRIVE_API thrive_ast *thrive_ast_parse_statement(thrive_state *state)
             thrive_token_expect(state, THRIVE_TOKEN_KIND_RPAREN);
             thrive_token_skip_newlines(state);
 
-            node->data.func_decl.body = thrive_ast_parse_block_stmt(state);
+            node->data.func_decl.body = thrive_ast_parse_block_statement(state);
             return node;
         }
 
@@ -1431,7 +1430,7 @@ THRIVE_API thrive_ast *thrive_ast_parse_statement(thrive_state *state)
 
         if (thrive_token_accept(state, THRIVE_TOKEN_KIND_ASSIGN))
         {
-            node->data.decl.value = thrive_ast_parse_expr(state);
+            node->data.decl.value = thrive_ast_parse_expression(state);
         }
 
         return node;
@@ -1443,7 +1442,7 @@ THRIVE_API thrive_ast *thrive_ast_parse_statement(thrive_state *state)
 
         thrive_token_expect(state, THRIVE_TOKEN_KIND_LPAREN);
 
-        node->data.if_stmt.cond = thrive_ast_parse_expr(state);
+        node->data.if_stmt.cond = thrive_ast_parse_expression(state);
 
         thrive_token_expect(state, THRIVE_TOKEN_KIND_RPAREN);
 
@@ -1451,7 +1450,7 @@ THRIVE_API thrive_ast *thrive_ast_parse_statement(thrive_state *state)
 
         if (state->current.kind == THRIVE_TOKEN_KIND_LBRACE)
         {
-            node->data.if_stmt.then_branch = thrive_ast_parse_block_stmt(state);
+            node->data.if_stmt.then_branch = thrive_ast_parse_block_statement(state);
         }
         else
         {
@@ -1468,7 +1467,7 @@ THRIVE_API thrive_ast *thrive_ast_parse_statement(thrive_state *state)
 
             if (state->current.kind == THRIVE_TOKEN_KIND_LBRACE)
             {
-                node->data.if_stmt.else_branch = thrive_ast_parse_block_stmt(state);
+                node->data.if_stmt.else_branch = thrive_ast_parse_block_statement(state);
             }
             else
             {
@@ -1496,17 +1495,17 @@ THRIVE_API thrive_ast *thrive_ast_parse_statement(thrive_state *state)
         thrive_token_expect(state, THRIVE_TOKEN_KIND_LPAREN);
 
         /* 1. Initialization (e.g., i = 0) */
-        node->data.for_loop.init = thrive_ast_parse_expr(state);
+        node->data.for_loop.init = thrive_ast_parse_expression(state);
 
         thrive_token_expect(state, THRIVE_TOKEN_KIND_COLON);
 
         /* 2. Condition (e.g., i < 10) */
-        node->data.for_loop.cond = thrive_ast_parse_expr(state);
+        node->data.for_loop.cond = thrive_ast_parse_expression(state);
 
         thrive_token_expect(state, THRIVE_TOKEN_KIND_COLON);
 
         /* 3. Step/Increment (e.g., i ++) */
-        node->data.for_loop.step = thrive_ast_parse_expr(state);
+        node->data.for_loop.step = thrive_ast_parse_expression(state);
 
         thrive_token_expect(state, THRIVE_TOKEN_KIND_RPAREN);
 
@@ -1515,7 +1514,7 @@ THRIVE_API thrive_ast *thrive_ast_parse_statement(thrive_state *state)
         /* 4. Body */
         if (state->current.kind == THRIVE_TOKEN_KIND_LBRACE)
         {
-            node->data.for_loop.body = thrive_ast_parse_block_stmt(state);
+            node->data.for_loop.body = thrive_ast_parse_block_statement(state);
         }
         else
         {
@@ -1526,7 +1525,7 @@ THRIVE_API thrive_ast *thrive_ast_parse_statement(thrive_state *state)
     }
 
     {
-        thrive_ast *expr = thrive_ast_parse_expr(state);
+        thrive_ast *expr = thrive_ast_parse_expression(state);
         thrive_token_skip_newlines(state);
         return expr;
     }
