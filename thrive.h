@@ -1650,8 +1650,20 @@ THRIVE_API thrive_ast *thrive_ast_fold(thrive_ast *node)
             case THRIVE_TOKEN_KIND_EQUALS:
                 result = (a == b);
                 break;
+            case THRIVE_TOKEN_KIND_NOT_EQUALS:
+                result = (a != b);
+                break;
             case THRIVE_TOKEN_KIND_LT:
                 result = (a < b);
+                break;
+            case THRIVE_TOKEN_KIND_GT:
+                result = (a > b);
+                break;
+            case THRIVE_TOKEN_KIND_LT_EQUALS:
+                result = (a <= b);
+                break;
+            case THRIVE_TOKEN_KIND_GT_EQUALS:
+                result = (a >= b);
                 break;
             case THRIVE_TOKEN_KIND_AND_BITWISE:
                 result = a & b;
