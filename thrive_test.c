@@ -1220,8 +1220,11 @@ int main(void)
         "u32 i = 0\n"
         "for (i = 0 : i < (0x01 + 0b10) : ++i) {\n"
         "  MessageBoxA(0 : text : caption : 0)\n"
-        "  if(i == 1 && ptr[i] == 10) {\n"
+        "  if (i == 0) {\n"
+        "     continue\n"
+        "  } else if (i == 1 && ptr[i] == 10) {\n"
         "     MessageBoxA(0 : text2 : caption : 0)\n"
+        "     break\n"
         "  }\n"
         "}\n"
         "ExitProcess(0)\n";
