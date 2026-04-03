@@ -397,7 +397,7 @@ THRIVE_API i32 thrive_f64_to_string(
     return p;
 }
 
-THRIVE_API void win32_io_pri32_ms(void *hConsole, s8 *name, u32 name_length, f64 ms, f64 ms_total)
+THRIVE_API void win32_io_print_ms(void *hConsole, s8 *name, u32 name_length, f64 ms, f64 ms_total)
 {
     u32 written;
 
@@ -511,8 +511,9 @@ typedef struct win32_thrive_metric
  * # Thrive Compilation
  * ############################################################################
  */
-THRIVE_API void thrive_panic(thrive_status status) {
-    (void) status;
+THRIVE_API void thrive_panic(thrive_status status)
+{
+    (void)status;
 }
 
 THRIVE_API i32 thrive_compile(s8 *file_name, void *hConsole, LARGE_INTEGER *freq)
@@ -599,11 +600,11 @@ THRIVE_API i32 thrive_compile(s8 *file_name, void *hConsole, LARGE_INTEGER *freq
         for (i = 0; i < METRIC_COUNT; ++i)
         {
             s8 *metric_name = win32_thrive_metric_names[i];
-            win32_io_pri32_ms(hConsole, metric_name, thrive_string_length(metric_name), metric_times[i], metric_times_total);
+            win32_io_print_ms(hConsole, metric_name, thrive_string_length(metric_name), metric_times[i], metric_times_total);
         }
 
         /* Total time */
-        win32_io_pri32_ms(hConsole, "time_total        ", 18, metric_times_total, metric_times_total);
+        win32_io_print_ms(hConsole, "time_total        ", 18, metric_times_total, metric_times_total);
     }
 
     return 0;
