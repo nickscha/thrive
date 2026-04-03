@@ -1205,6 +1205,7 @@ int main(void)
 {
     s8 *source_code =
         "; this is a line comment\n"
+        "ext u32 Sleep(u32 milliseconds)\n"
         "ext u32 MessageBoxA(u32 hWnd : s8 *lpText : s8 *lpCaption : u32 uType)\n"
         "ext u32 ExitProcess(u32 uExitCode)\n"
         "\n"
@@ -1227,6 +1228,7 @@ int main(void)
         "  if (i == 0) {\n"
         "     continue\n"
         "  } else if (i == add(0 : 1) && ptr[i] == 10) {\n"
+        "     Sleep(1000)\n"
         "     MessageBoxA(0 : text2 : caption : 0)\n"
         "     break\n"
         "  }\n"
@@ -1358,6 +1360,12 @@ int main(void)
         {
             gen_program(ast);
         }
+
+        printf("\n---------------------------------------------\n");
+        printf("ast_count       : %12d\n", s.ast_count);
+        printf("ast_size (bytes): %12d\n", s.ast_count * sizeof(thrive_ast));
+        printf("ast_size (kb)   : %12.6f\n", (f64)(s.ast_count * sizeof(thrive_ast)) / 1024.0);
+        printf("ast_size (mb)   : %12.6f\n", (f64)(s.ast_count * sizeof(thrive_ast)) / 1024.0 / 1024.0);
     }
 
     return 0;
