@@ -1532,10 +1532,15 @@ THRIVE_API thrive_ast *thrive_ast_parse_statement(thrive_state *state)
     }
 }
 
-THRIVE_API thrive_ast *thrive_ast_parse_program(thrive_state *state)
+THRIVE_API thrive_ast *thrive_ast_parse(thrive_state *state)
 {
-    thrive_ast *node = thrive_ast_create(state, THRIVE_AST_BLOCK);
-    thrive_ast **tail = &node->data.block.body;
+    thrive_ast *node;
+    thrive_ast **tail;
+
+    state->ast_count = 0;
+
+    node = thrive_ast_create(state, THRIVE_AST_BLOCK);
+    tail = &node->data.block.body;
 
     thrive_token_next(state);
     thrive_token_skip_newlines(state);
@@ -1561,12 +1566,6 @@ THRIVE_API thrive_ast *thrive_ast_parse_program(thrive_state *state)
     }
 
     return node;
-}
-
-THRIVE_API thrive_ast *thrive_ast_parse(thrive_state *state)
-{
-    state->ast_count = 0;
-    return thrive_ast_parse_program(state);
 }
 
 THRIVE_API thrive_ast *thrive_ast_fold(thrive_ast *node)
