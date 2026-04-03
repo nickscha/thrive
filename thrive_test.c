@@ -416,7 +416,7 @@ void gen_expr(thrive_ast *node)
         string_pool[id].start = node->data.string_lit.start;
         string_pool[id].length = node->data.string_lit.length;
 
-        printf("    lea rax, [rel .STR%d]\n", id);
+        printf("    lea rax, [rel STR_%d]\n", id);
         break;
     }
 
@@ -656,7 +656,7 @@ void gen_program(thrive_ast *node)
         for (i = 0; i < string_count; ++i)
         {
             u32 j;
-            printf(".STR%d: db ", i);
+            printf("STR_%u: db ", i);
             for (j = 0; j < string_pool[i].length; ++j)
             {
                 if (string_pool[i].start[j] == '\\' && j + 1 < string_pool[i].length)
@@ -1217,12 +1217,16 @@ int main(void)
         "arr[2] = 15\n"
         "u32 *ptr = arr\n"
         "\n"
+        "u32 add(u32 a : u32 b) {\n"
+        " a + b\n"
+        "}\n"
+        "\n"
         "u32 i = 0\n"
         "for (i = 0 : i < (0x01 + 0b10) : ++i) {\n"
         "  MessageBoxA(0 : text : caption : 0)\n"
         "  if (i == 0) {\n"
         "     continue\n"
-        "  } else if (i == 1 && ptr[i] == 10) {\n"
+        "  } else if (i == add(0 : 1) && ptr[i] == 10) {\n"
         "     MessageBoxA(0 : text2 : caption : 0)\n"
         "     break\n"
         "  }\n"
