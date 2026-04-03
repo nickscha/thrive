@@ -282,25 +282,26 @@ typedef struct thrive_state
 
 typedef enum thrive_ast_kind
 {
-    THRIVE_AST_INT,       /* 123 */
-    THRIVE_AST_NAME,      /* my_var */
-    THRIVE_AST_BINARY,    /* a + b */
-    THRIVE_AST_UNARY,     /* -a */
-    THRIVE_AST_TERNARY,   /* 1 > a ? 1 : 0 */
-    THRIVE_AST_IF,        /* if (cond) { ... } else { ... } */
-    THRIVE_AST_FOR,       /* for (init : cond : step) { ... } */
-    THRIVE_AST_BREAK,     /* break */
-    THRIVE_AST_CONTINUE,  /* continue */
-    THRIVE_AST_DEREF,     /* *ptr */
-    THRIVE_AST_ADDR_OF,   /* &var */
-    THRIVE_AST_RETURN,    /* ret expr */
-    THRIVE_AST_ASSIGN,    /* a = b (or a += b) */
-    THRIVE_AST_DECL,      /* u32 a = 10 */
-    THRIVE_AST_BLOCK,     /* { stmt1 stmt2 } */
-    THRIVE_AST_FUNC_DECL, /* u32 func(u32 a) { ... } */
-    THRIVE_AST_FUNC_CALL, /* func(a : b) */
-    THRIVE_AST_EXT_DECL,  /* ext u32 func(u32 a) */
-    THRIVE_AST_STRING     /* "deadbeef" */
+    THRIVE_AST_INT,         /* 123 */
+    THRIVE_AST_NAME,        /* my_var */
+    THRIVE_AST_BINARY,      /* a + b */
+    THRIVE_AST_UNARY,       /* -a */
+    THRIVE_AST_TERNARY,     /* 1 > a ? 1 : 0 */
+    THRIVE_AST_IF,          /* if (cond) { ... } else { ... } */
+    THRIVE_AST_FOR,         /* for (init : cond : step) { ... } */
+    THRIVE_AST_BREAK,       /* break */
+    THRIVE_AST_CONTINUE,    /* continue */
+    THRIVE_AST_DEREF,       /* *ptr */
+    THRIVE_AST_ADDR_OF,     /* &var */
+    THRIVE_AST_RETURN,      /* ret expr */
+    THRIVE_AST_ASSIGN,      /* a = b (or a += b) */
+    THRIVE_AST_DECL,        /* u32 a = 10 */
+    THRIVE_AST_BLOCK,       /* { stmt1 stmt2 } */
+    THRIVE_AST_FUNC_DECL,   /* u32 func(u32 a) { ... } */
+    THRIVE_AST_FUNC_CALL,   /* func(a : b) */
+    THRIVE_AST_EXT_DECL,    /* ext u32 func(u32 a) */
+    THRIVE_AST_STRING,      /* "deadbeef" */
+    THRIVE_AST_ARRAY_ACCESS /* arr[0] */
 
 } thrive_ast_kind;
 
@@ -369,7 +370,15 @@ struct thrive_ast
         {
             thrive_ast *name;
             thrive_ast *value;
+            u8 is_array;    /* 1 if array, 0 if normal var */
+            u32 array_size; /* size of the array */
         } decl;
+
+        struct
+        {
+            thrive_ast *left;  /* the array pointer/name */
+            thrive_ast *index; /* the index expression */
+        } array_access;
 
         struct
         {
@@ -1087,6 +1096,7 @@ THRIVE_API THRIVE_INLINE i32 thrive_ast_infix_bp(thrive_token_kind op, i32 *l_bp
 
     /* Postfix / Call: Highest priority */
     case THRIVE_TOKEN_KIND_LPAREN:
+    case THRIVE_TOKEN_KIND_LBRACKET:
         *l_bp = 150;
         *r_bp = 151;
         return 1;
@@ -1162,6 +1172,18 @@ THRIVE_API thrive_ast *thrive_ast_parse_expression_bp(thrive_state *state, i32 m
             thrive_token_expect(state, THRIVE_TOKEN_KIND_RPAREN);
 
             left = call_node;
+        }
+        else if (op == THRIVE_TOKEN_KIND_LBRACKET)
+        {
+            thrive_ast *index_expr = thrive_ast_parse_expression(state);
+            thrive_ast *node;
+            thrive_token_expect(state, THRIVE_TOKEN_KIND_RBRACKET);
+
+            node = thrive_ast_create(state, THRIVE_AST_ARRAY_ACCESS);
+            node->data.array_access.left = left;
+            node->data.array_access.index = index_expr;
+
+            left = node;
         }
         else if (op == THRIVE_TOKEN_KIND_INC || op == THRIVE_TOKEN_KIND_DEC)
         {
@@ -1427,8 +1449,26 @@ THRIVE_API thrive_ast *thrive_ast_parse_statement(thrive_state *state)
         node = thrive_ast_create(state, THRIVE_AST_DECL);
         node->data.decl.name = name;
         node->data.decl.value = 0;
+        node->data.decl.is_array = 0;
+        node->data.decl.array_size = 0;
 
-        if (thrive_token_accept(state, THRIVE_TOKEN_KIND_ASSIGN))
+        if (thrive_token_accept(state, THRIVE_TOKEN_KIND_LBRACKET))
+        {
+            node->data.decl.is_array = 1;
+
+            if (state->current.kind == THRIVE_TOKEN_KIND_INT)
+            {
+                node->data.decl.array_size = state->current.value.number;
+                thrive_token_next(state);
+            }
+            else
+            {
+                thrive_error(state, THRIVE_STATUS_ERROR_SYNTAX, "Expected integer literal for array size");
+            }
+
+            thrive_token_expect(state, THRIVE_TOKEN_KIND_RBRACKET);
+        }
+        else if (thrive_token_accept(state, THRIVE_TOKEN_KIND_ASSIGN))
         {
             node->data.decl.value = thrive_ast_parse_expression(state);
         }

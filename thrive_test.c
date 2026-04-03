@@ -14,6 +14,7 @@ typedef struct
     s8 *start;
     u32 length;
     i32 offset; /* stack offset (negative from rbp) */
+    u8 is_array;
 } thrive_var;
 
 static thrive_var vars[THRIVE_MAX_VARS];
@@ -60,15 +61,17 @@ thrive_var *find_var(s8 *start, u32 length)
     return 0;
 }
 
-thrive_var *add_var(s8 *start, u32 length)
+thrive_var *add_var(s8 *start, u32 length, u8 is_array, u32 array_size)
 {
     thrive_var *v = &vars[var_count++];
+    u32 size = is_array ? array_size : 1;
 
-    stack_offset -= 8; /* 8 bytes per variable */
+    stack_offset -= 8 * size; /* 8 bytes per stack slot */
 
     v->start = start;
     v->length = length;
     v->offset = stack_offset;
+    v->is_array = is_array;
 
     return v;
 }
@@ -84,11 +87,27 @@ void gen_expr(thrive_ast *node)
         break;
     case THRIVE_AST_NAME:
     {
-        thrive_var *v = find_var(
-            node->data.name.start,
-            node->data.name.length);
+        thrive_var *v = find_var(node->data.name.start, node->data.name.length);
 
-        printf("    mov rax, [rbp%d]\n", v->offset);
+        if (v->is_array)
+        {
+            printf("    lea rax, [rbp%d]\n", v->offset);
+        }
+        else
+        {
+            printf("    mov rax, [rbp%d]\n", v->offset);
+        }
+        break;
+    }
+    case THRIVE_AST_ARRAY_ACCESS:
+    {
+        gen_expr(node->data.array_access.index);
+        printf("    imul rax, 8\n"); /* TODO: multiply index by slot size (8) */
+        printf("    push rax\n");
+        gen_expr(node->data.array_access.left); /* evaluate array pointer/name */
+        printf("    pop rbx\n");                /* pop offset */
+        printf("    add rax, rbx\n");           /* add offset to base pointer */
+        printf("    mov rax, [rax]\n");         /* dereference */
         break;
     }
     case THRIVE_AST_BINARY:
@@ -296,6 +315,22 @@ void gen_expr(thrive_ast *node)
             printf("    pop rbx\n");         /* rbx = 10 */
             printf("    mov [rax], rbx\n");  /* store 10 at address in rax */
         }
+        else if (left->kind == THRIVE_AST_ARRAY_ACCESS)
+        {
+            gen_expr(right);          /* rax = value to store */
+            printf("    push rax\n"); /* save value */
+
+            gen_expr(left->data.array_access.index); /* calculate offset */
+            printf("    imul rax, 8\n");
+            printf("    push rax\n"); /* save offset */
+
+            gen_expr(left->data.array_access.left); /* rax = base array pointer */
+            printf("    pop rbx\n");                /* rbx = offset */
+            printf("    add rax, rbx\n");           /* rax = target memory address */
+
+            printf("    pop rbx\n");        /* rbx = value to store */
+            printf("    mov [rax], rbx\n"); /* write to array! */
+        }
         else
         {
             /* Case: i = 10 */
@@ -414,7 +449,10 @@ void gen_stmt(thrive_ast *node)
         thrive_ast *name = node->data.decl.name;
         thrive_ast *value = node->data.decl.value;
 
-        thrive_var *v = add_var(name->data.name.start, name->data.name.length);
+        thrive_var *v = add_var(name->data.name.start,
+                                name->data.name.length,
+                                node->data.decl.is_array,
+                                node->data.decl.array_size);
 
         if (value)
         {
@@ -520,7 +558,7 @@ void gen_stmt(thrive_ast *node)
 
         while (curr && p_idx < 4)
         {
-            thrive_var *v = add_var(curr->data.name.start, curr->data.name.length);
+            thrive_var *v = add_var(curr->data.name.start, curr->data.name.length, 0, 0);
             printf("    mov [rbp%d], %s\n", v->offset, arg_regs[p_idx++]);
             curr = curr->next;
         }
@@ -833,11 +871,24 @@ THRIVE_API void thrive_ast_print(thrive_ast *node, u32 depth)
         break;
 
     case THRIVE_AST_DECL:
-        printf("DECL\n");
+    {
+        if (node->data.decl.is_array)
+        {
+            printf("DECL ARRAY [size: %u]\n", node->data.decl.array_size);
+        }
+        else
+        {
+            printf("DECL\n");
+        }
+
         thrive_ast_print(node->data.decl.name, depth + 1);
+
         if (node->data.decl.value)
+        {
             thrive_ast_print(node->data.decl.value, depth + 1);
+        }
         break;
+    }
 
     case THRIVE_AST_BLOCK:
     {
@@ -914,6 +965,20 @@ THRIVE_API void thrive_ast_print(thrive_ast *node, u32 depth)
                 curr = curr->next;
             }
         }
+        break;
+    }
+
+    case THRIVE_AST_ARRAY_ACCESS:
+    {
+        printf("ARRAY_ACCESS\n");
+
+        thrive_print_indent(depth + 1);
+        printf("BASE:\n");
+        thrive_ast_print(node->data.array_access.left, depth + 2);
+
+        thrive_print_indent(depth + 1);
+        printf("INDEX:\n");
+        thrive_ast_print(node->data.array_access.index, depth + 2);
         break;
     }
 
@@ -1144,11 +1209,20 @@ int main(void)
         "ext u32 ExitProcess(u32 uExitCode)\n"
         "\n"
         "s8 *text = \"Hello World from THRIVE!\\nIt works!\"\n"
+        "s8 *text2 = \"arr[1] == 10\"\n"
         "s8 *caption = \"Win32 Success\"\n"
+        "u32 arr[3]\n"
+        "arr[0] = 5\n"
+        "arr[1] = arr[0] + 5\n"
+        "arr[2] = 15\n"
         "\n"
         "u32 i = 0\n"
-        "for (i = 0 : i < (0x01 + 0b10) : ++i)\n"
+        "for (i = 0 : i < (0x01 + 0b10) : ++i) {\n"
         "  MessageBoxA(0 : text : caption : 0)\n"
+        "  if(i == 1 && arr[i] == 10) {\n"
+        "     MessageBoxA(0 : text2 : caption : 0)\n"
+        "  }\n"
+        "}\n"
         "ExitProcess(0)\n";
 
     /*
