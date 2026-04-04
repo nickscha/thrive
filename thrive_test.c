@@ -1361,11 +1361,13 @@ int main(void)
             gen_program(ast);
         }
 
-        printf("\n---------------------------------------------\n");
+        printf("\n");
+        printf("---------------------------------------------\n");
         printf("ast_count       : %12d\n", s.ast_count);
         printf("ast_size (bytes): %12d\n", s.ast_count * sizeof(thrive_ast));
         printf("ast_size (kb)   : %12.6f\n", (f64)(s.ast_count * sizeof(thrive_ast)) / 1024.0);
         printf("ast_size (mb)   : %12.6f\n", (f64)(s.ast_count * sizeof(thrive_ast)) / 1024.0 / 1024.0);
+        printf("---------------------------------------------\n");
     }
 
     return 0;
