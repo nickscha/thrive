@@ -514,6 +514,18 @@ typedef struct win32_thrive_metric
 THRIVE_API void thrive_panic(thrive_status status)
 {
     (void)status;
+
+    /*
+    if (s.status.type != THRIVE_STATUS_OK)
+    {
+        SetConsoleTextAttribute(hConsole, 12);
+        WriteConsoleA(hConsole, "[thrive] ", 9, &written, 0);
+        SetConsoleTextAttribute(hConsole, 7);
+
+        WriteConsoleA(hConsole, s.status.message, thrive_string_length(s.status.message), &written, 0);
+        WriteConsoleA(hConsole, "\n", 1, &written, 0);
+    }
+    */
 }
 
 THRIVE_API i32 thrive_compile(s8 *file_name, void *hConsole, LARGE_INTEGER *freq)
@@ -566,18 +578,6 @@ THRIVE_API i32 thrive_compile(s8 *file_name, void *hConsole, LARGE_INTEGER *freq
         QueryPerformanceCounter(&metrics[METRIC_FOLDING].time_end);
 
         (void)ast;
-
-        /*
-        if (s.status.type != THRIVE_STATUS_OK)
-        {
-            SetConsoleTextAttribute(hConsole, 12);
-            WriteConsoleA(hConsole, "[thrive] ", 9, &written, 0);
-            SetConsoleTextAttribute(hConsole, 7);
-
-            WriteConsoleA(hConsole, s.status.message, thrive_string_length(s.status.message), &written, 0);
-            WriteConsoleA(hConsole, "\n", 1, &written, 0);
-        }
-        */
 
         VirtualFree(s.ast_pool, 0, MEM_RELEASE);
     }
