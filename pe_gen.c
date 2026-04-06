@@ -32,22 +32,22 @@ typedef unsigned long u64;
  * # [SECTION] PE Builder
  * #############################################################################
  */
-typedef struct buf_t
+typedef struct buffer
 {
     u8 *data;
     u32 size;
     u32 capacity;
-} buf_t;
+} buffer;
 
-void emit_u8(buf_t *b, u8 v) { b->data[b->size++] = v; }
+void emit_u8(buffer *b, u8 v) { b->data[b->size++] = v; }
 
-void emit_u16(buf_t *b, u16 v)
+void emit_u16(buffer *b, u16 v)
 {
     emit_u8(b, v & 0xFF);
     emit_u8(b, (v >> 8) & 0xFF);
 }
 
-void emit_u32(buf_t *b, u32 v)
+void emit_u32(buffer *b, u32 v)
 {
     emit_u8(b, v & 0xFF);
     emit_u8(b, (v >> 8) & 0xFF);
@@ -55,7 +55,7 @@ void emit_u32(buf_t *b, u32 v)
     emit_u8(b, (v >> 24) & 0xFF);
 }
 
-void emit_u64(buf_t *b, u64 v)
+void emit_u64(buffer *b, u64 v)
 {
     emit_u8(b, (u8)(v & 0xFF));
     emit_u8(b, (u8)((v >> 8) & 0xFF));
@@ -67,7 +67,17 @@ void emit_u64(buf_t *b, u64 v)
     emit_u8(b, (u8)((v >> 56) & 0xFF));
 }
 
-void pad_to(buf_t *b, u32 align)
+void emit_bytes(buffer *b, u8 *data, u32 size)
+{
+    u32 i;
+
+    for (i = 0; i < size; ++i)
+    {
+        emit_u8(b, data[i]);
+    }
+}
+
+void pad_to(buffer *b, u32 align)
 {
     while (b->size % align)
     {
@@ -99,14 +109,14 @@ typedef enum
     REG_R15 = 15
 } x64_reg;
 
-void emit_modrm_reg(buf_t *b, x64_reg reg, x64_reg rm)
+void emit_modrm_reg(buffer *b, x64_reg reg, x64_reg rm)
 {
     /* Mod = 11 (register-direct addressing) */
     u8 modrm = 0xC0 | ((reg & 7) << 3) | (rm & 7);
     emit_u8(b, modrm);
 }
 
-void emit_rex(buf_t *b, u8 w, x64_reg reg, x64_reg rm)
+void emit_rex(buffer *b, u8 w, x64_reg reg, x64_reg rm)
 {
     u8 rex = 0x40;
     if (w)
@@ -123,7 +133,7 @@ void emit_rex(buf_t *b, u8 w, x64_reg reg, x64_reg rm)
 #define OP_EXT_MOV 0
 
 /* SUB reg, imm8 or ADD reg, imm8 */
-void emit_alu_ri8(buf_t *b, u8 op_ext, x64_reg dst, u8 imm)
+void emit_alu_ri8(buffer *b, u8 op_ext, x64_reg dst, u8 imm)
 {
     emit_rex(b, 1, 0, dst);
     emit_u8(b, 0x83);
@@ -132,7 +142,7 @@ void emit_alu_ri8(buf_t *b, u8 op_ext, x64_reg dst, u8 imm)
 }
 
 /* MOV reg, imm32 */
-void emit_mov_ri32(buf_t *b, x64_reg dst, u32 imm)
+void emit_mov_ri32(buffer *b, x64_reg dst, u32 imm)
 {
     emit_rex(b, 1, 0, dst);
     emit_u8(b, 0xC7);
@@ -141,7 +151,7 @@ void emit_mov_ri32(buf_t *b, x64_reg dst, u32 imm)
 }
 
 /* MOV reg, imm64 */
-void emit_mov_ri64(buf_t *b, x64_reg dst, u64 imm)
+void emit_mov_ri64(buffer *b, x64_reg dst, u64 imm)
 {
     emit_rex(b, 1, 0, dst);
     emit_u8(b, 0xB8 | (dst & 7));
@@ -149,7 +159,7 @@ void emit_mov_ri64(buf_t *b, x64_reg dst, u64 imm)
 }
 
 /* PUSH reg */
-void emit_push_r(buf_t *b, x64_reg reg)
+void emit_push_r(buffer *b, x64_reg reg)
 {
     if (reg >= 8)
     {
@@ -159,7 +169,7 @@ void emit_push_r(buf_t *b, x64_reg reg)
 }
 
 /* XOR reg, reg */
-void emit_xor_rr(buf_t *b, x64_reg dst, x64_reg src)
+void emit_xor_rr(buffer *b, x64_reg dst, x64_reg src)
 {
     emit_rex(b, 1, src, dst);
     emit_u8(b, 0x31);
@@ -167,14 +177,14 @@ void emit_xor_rr(buf_t *b, x64_reg dst, x64_reg src)
 }
 
 /* MOV reg, reg */
-void emit_mov_rr(buf_t *b, x64_reg dst, x64_reg src)
+void emit_mov_rr(buffer *b, x64_reg dst, x64_reg src)
 {
     emit_rex(b, 1, src, dst);
     emit_u8(b, 0x8B);
     emit_modrm_reg(b, src, dst);
 }
 
-void emit_inst_call_rel32(buf_t *b, u32 curr_rva, u32 target_rva)
+void emit_inst_call_rel32(buffer *b, u32 curr_rva, u32 target_rva)
 {
     u32 rel = target_rva - (curr_rva + 6);
     emit_u8(b, 0xFF); /* CALL */
@@ -198,7 +208,7 @@ typedef struct thrive_import
 #define MAX_DLLS 16
 #define MAX_TOTAL_IMPORTS 512
 
-u32 emit_idata(buf_t *b, u32 rva_base, thrive_import *imports)
+u32 emit_idata(buffer *b, u32 rva_base, thrive_import *imports)
 {
     u32 start = b->size;
     u32 i, j, dll_count = 0;
@@ -319,7 +329,7 @@ u32 emit_idata(buf_t *b, u32 rva_base, thrive_import *imports)
     return b->size - start;
 }
 
-void emit_x86_64_pe32_plus(thrive_import *imports, buf_t *out, u8 *code, u32 code_size)
+void emit_x86_64_pe32_plus(thrive_import *imports, buffer *out, u8 *code, u32 code_size)
 {
     u32 pe_offset = 0x80;
     u32 image_base = 0x400000;
@@ -337,16 +347,18 @@ void emit_x86_64_pe32_plus(thrive_import *imports, buf_t *out, u8 *code, u32 cod
     u32 idata_raw = text_raw + text_raw_size;
 
     /* Dummy run to find out exactly how big .idata will be */
-    buf_t dummy = {0};
     u32 actual_idata_size = 0;
     u32 idata_raw_size = 0;
     u32 idata_virt_size = 0;
     u32 size_of_image = 0;
     i32 i;
 
-    dummy.data = (u8 *)malloc(8192); /* Generous dummy buffer */
-    actual_idata_size = emit_idata(&dummy, idata_rva, imports);
-    free(dummy.data);
+    /* Reset Buffer */
+    out->size = 0;
+
+    actual_idata_size = emit_idata(out, idata_rva, imports);
+
+    out->size = 0;
 
     idata_raw_size = (actual_idata_size + 0x1FF) & ~0x1FF;
     idata_virt_size = (actual_idata_size + 0xFFF) & ~0xFFF;
@@ -423,14 +435,7 @@ void emit_x86_64_pe32_plus(thrive_import *imports, buf_t *out, u8 *code, u32 cod
     }
 
     /* .text Section Header */
-    emit_u8(out, '.');
-    emit_u8(out, 't');
-    emit_u8(out, 'e');
-    emit_u8(out, 'x');
-    emit_u8(out, 't');
-    emit_u8(out, 0);
-    emit_u8(out, 0);
-    emit_u8(out, 0);
+    emit_bytes(out, (u8 *)".text\0\0\0", 8);
     emit_u32(out, code_size);
     emit_u32(out, text_rva);
     emit_u32(out, text_raw_size);
@@ -442,14 +447,7 @@ void emit_x86_64_pe32_plus(thrive_import *imports, buf_t *out, u8 *code, u32 cod
     emit_u32(out, 0x60000020); /* Code | Exec | Read */
 
     /* .idata Section Header */
-    emit_u8(out, '.');
-    emit_u8(out, 'i');
-    emit_u8(out, 'd');
-    emit_u8(out, 'a');
-    emit_u8(out, 't');
-    emit_u8(out, 'a');
-    emit_u8(out, 0);
-    emit_u8(out, 0);
+    emit_bytes(out, (u8 *)".idata\0\0", 8);
     emit_u32(out, idata_virt_size);
     emit_u32(out, idata_rva);
     emit_u32(out, idata_raw_size);
@@ -468,10 +466,7 @@ void emit_x86_64_pe32_plus(thrive_import *imports, buf_t *out, u8 *code, u32 cod
         emit_u8(out, 0);
     }
 
-    for (i = 0; i < (i32)code_size; ++i)
-    {
-        emit_u8(out, code[i]);
-    }
+    emit_bytes(out, code, code_size);
     pad_to(out, file_align);
 
     /* .IDATA Section Body */
@@ -500,17 +495,18 @@ int main(void)
     };
 
     /* 1. Dry Run to Resolve IAT RVAs */
-    buf_t tmp = {0};
-    tmp.data = (u8 *)malloc(8192);
+    buffer buf = {0};
+    buf.data = (u8 *)malloc(8192 * sizeof(u8));
+    buf.capacity = 8192;
+
     u32 estimated_text_virt_size = 0x1000;
     u32 idata_rva_base = 0x1000 + estimated_text_virt_size;
 
-    emit_idata(&tmp, idata_rva_base, imports);
-    free(tmp.data);
+    emit_idata(&buf, idata_rva_base, imports);
 
     /* 2. Machine Code Generation */
     u8 code[256];
-    buf_t codebuf = {0};
+    buffer codebuf = {0};
     codebuf.data = code;
 
     /* Sleep(2000) */
@@ -526,10 +522,6 @@ int main(void)
     emit_alu_ri8(&codebuf, OP_EXT_ADD, REG_RSP, 32);                    /* add rsp, 32 */
 
     /* 3. Build PE */
-    buf_t buf = {0};
-    buf.data = (u8 *)malloc(8192 * sizeof(u8));
-    buf.capacity = 8192;
-
     emit_x86_64_pe32_plus(imports, &buf, codebuf.data, codebuf.size);
 
     FILE *f = fopen("out.exe", "wb");
