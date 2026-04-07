@@ -2481,6 +2481,84 @@ THRIVE_API THRIVE_INLINE void thrive_x64_jcc(thrive_buffer *b, thrive_x64_cc cc,
     thrive_buffer_write_u32(b, (u32)rel);
 }
 
+/* NEG */
+THRIVE_API THRIVE_INLINE void thrive_x64_neg_r(thrive_buffer *b, thrive_x64_reg reg)
+{
+    thrive_x64_rex(b, 1, 0, reg);
+    thrive_buffer_write_u8(b, 0xF7);
+    thrive_buffer_write_u8(b, 0xD8 | (reg & 7));
+}
+
+/* TEST rax, rax */
+THRIVE_API THRIVE_INLINE void thrive_x64_test_rr(thrive_buffer *b, thrive_x64_reg a, thrive_x64_reg breg)
+{
+    thrive_x64_rex(b, 1, breg, a);
+    thrive_buffer_write_u8(b, 0x85);
+    thrive_x64_modrm_reg(b, breg, a);
+}
+
+/* CMP rax, imm32 */
+THRIVE_API THRIVE_INLINE void thrive_x64_cmp_ri32(thrive_buffer *b, thrive_x64_reg reg, u32 imm)
+{
+    thrive_x64_rex(b, 1, 0, reg);
+    thrive_buffer_write_u8(b, 0x81);
+    thrive_buffer_write_u8(b, 0xF8 | (reg & 7));
+    thrive_buffer_write_u32(b, imm);
+}
+
+THRIVE_API THRIVE_INLINE void thrive_x64_and_rr(thrive_buffer *b, thrive_x64_reg dst, thrive_x64_reg src)
+{
+    thrive_x64_rex(b, 1, src, dst);
+    thrive_buffer_write_u8(b, 0x21);
+    thrive_x64_modrm_reg(b, src, dst);
+}
+
+THRIVE_API THRIVE_INLINE void thrive_x64_or_rr(thrive_buffer *b, thrive_x64_reg dst, thrive_x64_reg src)
+{
+    thrive_x64_rex(b, 1, src, dst);
+    thrive_buffer_write_u8(b, 0x09);
+    thrive_x64_modrm_reg(b, src, dst);
+}
+
+THRIVE_API THRIVE_INLINE void thrive_x64_shl_cl(thrive_buffer *b, thrive_x64_reg reg)
+{
+    thrive_x64_rex(b, 1, 0, reg);
+    thrive_buffer_write_u8(b, 0xD3);
+    thrive_buffer_write_u8(b, 0xE0 | (reg & 7));
+}
+
+THRIVE_API THRIVE_INLINE void thrive_x64_shr_cl(thrive_buffer *b, thrive_x64_reg reg)
+{
+    thrive_x64_rex(b, 1, 0, reg);
+    thrive_buffer_write_u8(b, 0xD3);
+    thrive_buffer_write_u8(b, 0xE8 | (reg & 7));
+}
+
+/* IDIV */
+THRIVE_API THRIVE_INLINE void thrive_x64_idiv_r(thrive_buffer *b, thrive_x64_reg reg)
+{
+    thrive_x64_rex(b, 1, 0, reg);
+    thrive_buffer_write_u8(b, 0xF7);
+    thrive_buffer_write_u8(b, 0xF8 | (reg & 7));
+}
+
+/* CQO */
+THRIVE_API THRIVE_INLINE void thrive_x64_cqo(thrive_buffer *b)
+{
+    thrive_buffer_write_u8(b, 0x48);
+    thrive_buffer_write_u8(b, 0x99);
+}
+
+THRIVE_API THRIVE_INLINE void thrive_x64_leave(thrive_buffer *b)
+{
+    thrive_buffer_write_u8(b, 0xC9);
+}
+
+THRIVE_API THRIVE_INLINE void thrive_x64_ret(thrive_buffer *b)
+{
+    thrive_buffer_write_u8(b, 0xC3);
+}
+
 /* direct call */
 THRIVE_API THRIVE_INLINE void thrive_x64_call_rel32(thrive_buffer *b, u32 curr_rva, u32 target_rva)
 {
