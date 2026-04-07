@@ -29,7 +29,7 @@ typedef unsigned long u64;
 #endif
 
 /* #############################################################################
- * # [SECTION] PE Builder
+ * # [SECTION] Byte Emitters
  * #############################################################################
  */
 typedef struct buffer
@@ -39,7 +39,10 @@ typedef struct buffer
     u32 capacity;
 } buffer;
 
-void emit_u8(buffer *b, u8 v) { b->data[b->size++] = v; }
+void emit_u8(buffer *b, u8 v)
+{
+    b->data[b->size++] = v;
+}
 
 void emit_u16(buffer *b, u16 v)
 {
@@ -119,12 +122,22 @@ void emit_modrm_reg(buffer *b, x64_reg reg, x64_reg rm)
 void emit_rex(buffer *b, u8 w, x64_reg reg, x64_reg rm)
 {
     u8 rex = 0x40;
+
     if (w)
+    {
         rex |= 0x08; /* W: 64-bit operand size */
+    }
+
     if (reg >= 8)
+    {
         rex |= 0x04; /* R: Extension for 'reg' field */
+    }
+
     if (rm >= 8)
+    {
         rex |= 0x01; /* B: Extension for 'rm' field */
+    }
+
     emit_u8(b, rex);
 }
 
@@ -179,9 +192,9 @@ void emit_xor_rr(buffer *b, x64_reg dst, x64_reg src)
 /* MOV reg, reg */
 void emit_mov_rr(buffer *b, x64_reg dst, x64_reg src)
 {
-    emit_rex(b, 1, src, dst);
+    emit_rex(b, 1, dst, src);
     emit_u8(b, 0x8B);
-    emit_modrm_reg(b, src, dst);
+    emit_modrm_reg(b, dst, src);
 }
 
 void emit_inst_call_rel32(buffer *b, u32 curr_rva, u32 target_rva)
@@ -193,7 +206,7 @@ void emit_inst_call_rel32(buffer *b, u32 curr_rva, u32 target_rva)
 }
 
 /* #############################################################################
- * # [SECTION] Import Directory
+ * # [SECTION] PE Utilities
  * #############################################################################
  */
 typedef struct thrive_import
@@ -201,339 +214,330 @@ typedef struct thrive_import
     s8 *library;       /* e.g. "kernel32.dll" */
     s8 **imports;      /* e.g. "ExitProcess", "Sleep" */
     u32 imports_count; /* count of imports entries */
-    u32 *iat_rvas;     /* Output: populates with resolved IAT RVAs */
+
 } thrive_import;
 
-/* Standard limits to avoid heap allocations in C89 */
-#define MAX_DLLS 16
-#define MAX_TOTAL_IMPORTS 512
-
-u32 emit_idata(buffer *b, u32 rva_base, thrive_import *imports)
+static u32 align_up(u32 val, u32 align)
 {
-    u32 start = b->size;
-    u32 i, j, dll_count = 0;
-    u32 idt_offset;
-    u32 pool_idx = 0;
-
-    u32 int_rvas[MAX_DLLS];
-    u32 iat_rvas[MAX_DLLS];
-    u32 dll_name_rvas[MAX_DLLS];
-
-    u32 func_rva_pool[MAX_TOTAL_IMPORTS];
-    u32 *func_name_rvas[MAX_DLLS];
-
-    while (imports[dll_count].library != NULL && dll_count < MAX_DLLS)
+    if (align == 0)
     {
-        func_name_rvas[dll_count] = &func_rva_pool[pool_idx];
-        pool_idx += imports[dll_count].imports_count;
-
-        if (pool_idx >= MAX_TOTAL_IMPORTS)
-        {
-            break; /* TODO: Safety check */
-        }
-        dll_count++;
+        return val;
     }
-
-    if (dll_count == 0)
-        return 0;
-
-    /* 2. IDT (Import Directory Table) + Null Terminator Descriptor */
-    idt_offset = b->size;
-    for (i = 0; i < (dll_count + 1) * 20; ++i)
-    {
-        emit_u8(b, 0);
-    }
-
-    /* 3. INT (Import Name Table) */
-    for (i = 0; i < dll_count; ++i)
-    {
-        int_rvas[i] = rva_base + (b->size - start);
-        for (j = 0; j < imports[i].imports_count + 1; ++j)
-        {
-            emit_u64(b, 0); /* 64-bit RVAs */
-        }
-    }
-
-    /* 4. IAT (Import Address Table) */
-    for (i = 0; i < dll_count; ++i)
-    {
-        iat_rvas[i] = rva_base + (b->size - start);
-
-        for (j = 0; j < imports[i].imports_count; ++j)
-        {
-            if (imports[i].iat_rvas != NULL)
-            {
-                imports[i].iat_rvas[j] = iat_rvas[i] + (j * 8);
-            }
-        }
-
-        for (j = 0; j < imports[i].imports_count + 1; ++j)
-        {
-            emit_u64(b, 0);
-        }
-    }
-
-    /* 5. Function Names & Hints */
-    for (i = 0; i < dll_count; ++i)
-    {
-        for (j = 0; j < imports[i].imports_count; ++j)
-        {
-            s8 *p = imports[i].imports[j];
-            func_name_rvas[i][j] = rva_base + (b->size - start);
-
-            emit_u16(b, 0); /* Hint */
-            while (*p)
-            {
-                emit_u8(b, *p++);
-            }
-            emit_u8(b, 0);
-        }
-    }
-
-    /* 6. DLL Names */
-    for (i = 0; i < dll_count; ++i)
-    {
-        s8 *p = imports[i].library;
-        dll_name_rvas[i] = rva_base + (b->size - start);
-        while (*p)
-        {
-            emit_u8(b, *p++);
-        }
-        emit_u8(b, 0);
-    }
-
-    /* 7. Fill INT and IAT slots with the strings' RVAs */
-    for (i = 0; i < dll_count; ++i)
-    {
-        u32 int_off = (int_rvas[i] - rva_base) + start;
-        u32 iat_off = (iat_rvas[i] - rva_base) + start;
-
-        for (j = 0; j < imports[i].imports_count; ++j)
-        {
-            *(u64 *)(b->data + int_off + (j * 8)) = (u64)func_name_rvas[i][j];
-            *(u64 *)(b->data + iat_off + (j * 8)) = (u64)func_name_rvas[i][j];
-        }
-    }
-
-    /* 8. Link everything back into the IDT */
-    for (i = 0; i < dll_count; ++i)
-    {
-        u32 entry_off = idt_offset + (i * 20);
-        *(u32 *)(b->data + entry_off + 0) = int_rvas[i];       /* INT RVA */
-        *(u32 *)(b->data + entry_off + 4) = 0;                 /* TimeDateStamp */
-        *(u32 *)(b->data + entry_off + 8) = 0;                 /* ForwarderChain */
-        *(u32 *)(b->data + entry_off + 12) = dll_name_rvas[i]; /* Name RVA */
-        *(u32 *)(b->data + entry_off + 16) = iat_rvas[i];      /* IAT RVA */
-    }
-
-    return b->size - start;
+    return (val + align - 1) & ~(align - 1);
 }
 
-void emit_x86_64_pe32_plus(thrive_import *imports, buffer *out, u8 *code, u32 code_size)
+/* * Allows your emitter to fetch the exact IAT target RVA for a specific
+ * function before generating the instruction, avoiding a 2-pass fixup.
+ */
+u32 get_iat_rva(thrive_import *imports, u32 num_imports, u32 text_vsize, u32 dll_index, u32 func_index)
 {
-    u32 pe_offset = 0x80;
-    u32 image_base = 0x400000;
-    u32 section_align = 0x1000;
-    u32 file_align = 0x200;
-    u32 size_of_headers = 0x200;
-
-    /* Dynamic Size Calculation */
     u32 text_rva = 0x1000;
-    u32 text_raw = 0x200;
-    u32 text_raw_size = (code_size + 0x1FF) & ~0x1FF;
-    u32 text_virt_size = (code_size + 0xFFF) & ~0xFFF;
+    u32 rdata_rva = text_rva + align_up(text_vsize, 0x1000);
+    u32 idt_size = (num_imports + 1) * 20;
 
-    u32 idata_rva = text_rva + text_virt_size;
-    u32 idata_raw = text_raw + text_raw_size;
+    u32 num_funcs = 0;
+    u32 i;
 
-    /* Dummy run to find out exactly how big .idata will be */
-    u32 actual_idata_size = 0;
-    u32 idata_raw_size = 0;
-    u32 idata_virt_size = 0;
-    u32 size_of_image = 0;
-    i32 i;
-
-    /* Reset Buffer */
-    out->size = 0;
-
-    actual_idata_size = emit_idata(out, idata_rva, imports);
-
-    out->size = 0;
-
-    idata_raw_size = (actual_idata_size + 0x1FF) & ~0x1FF;
-    idata_virt_size = (actual_idata_size + 0xFFF) & ~0xFFF;
-    size_of_image = idata_rva + idata_virt_size;
-
-    /* DOS Header */
-    emit_u16(out, 0x5A4D); /* MZ */
-
-    while (out->size < 0x3C)
+    for (i = 0; i < num_imports; ++i)
     {
-        emit_u8(out, 0);
+        num_funcs += imports[i].imports_count;
     }
 
-    emit_u32(out, pe_offset);
+    u32 ilt_size = (num_funcs + num_imports) * 8;
+    u32 iat_base_rva = rdata_rva + idt_size + ilt_size;
 
-    while (out->size < pe_offset)
+    u32 offset = 0;
+
+    for (i = 0; i < dll_index; ++i)
     {
-        emit_u8(out, 0);
+        offset += (imports[i].imports_count + 1) * 8;
     }
 
-    /* PE Signature & COFF Header */
-    emit_u32(out, 0x00004550);
-    emit_u16(out, 0x8664);
-    emit_u16(out, 2);
-    emit_u32(out, 0);
-    emit_u32(out, 0);
-    emit_u32(out, 0);
-    emit_u16(out, 0xF0);
-    emit_u16(out, 0x0022);
+    offset += func_index * 8;
 
-    /* Optional Headers (PE32+) */
-    emit_u16(out, 0x20B);
-    emit_u8(out, 0);
-    emit_u8(out, 0);
-    emit_u32(out, code_size);
-    emit_u32(out, 0);
-    emit_u32(out, 0);
-    emit_u32(out, text_rva);
-    emit_u32(out, text_rva);
-    emit_u64(out, image_base);
-    emit_u32(out, section_align);
-    emit_u32(out, file_align);
-    emit_u16(out, 4);
-    emit_u16(out, 0);
-    emit_u16(out, 0);
-    emit_u16(out, 0);
-    emit_u16(out, 4);
-    emit_u16(out, 0);
-    emit_u32(out, 0);
-    emit_u32(out, size_of_image); /* Updated to be dynamic */
-    emit_u32(out, size_of_headers);
-    emit_u32(out, 0);
-    emit_u16(out, 3);
-    emit_u16(out, 0);
-    emit_u64(out, 0x100000);
-    emit_u64(out, 0x1000);
-    emit_u64(out, 0x100000);
-    emit_u64(out, 0x1000);
-    emit_u32(out, 0);
-    emit_u32(out, 16);
-
-    for (i = 0; i < 16; ++i)
-    {
-        if (i == 1)
-        {
-            emit_u32(out, idata_rva);
-            emit_u32(out, actual_idata_size); /* Using precise size */
-        }
-        else
-        {
-            emit_u32(out, 0);
-            emit_u32(out, 0);
-        }
-    }
-
-    /* .text Section Header */
-    emit_bytes(out, (u8 *)".text\0\0\0", 8);
-    emit_u32(out, code_size);
-    emit_u32(out, text_rva);
-    emit_u32(out, text_raw_size);
-    emit_u32(out, text_raw);
-    emit_u32(out, 0);
-    emit_u32(out, 0);
-    emit_u16(out, 0);
-    emit_u16(out, 0);
-    emit_u32(out, 0x60000020); /* Code | Exec | Read */
-
-    /* .idata Section Header */
-    emit_bytes(out, (u8 *)".idata\0\0", 8);
-    emit_u32(out, idata_virt_size);
-    emit_u32(out, idata_rva);
-    emit_u32(out, idata_raw_size);
-    emit_u32(out, idata_raw);
-    emit_u32(out, 0);
-    emit_u32(out, 0);
-    emit_u16(out, 0);
-    emit_u16(out, 0);
-    emit_u32(out, 0x40000040); /* Read */
-
-    pad_to(out, file_align);
-
-    /* .TEXT Section Body */
-    while (out->size < text_raw)
-    {
-        emit_u8(out, 0);
-    }
-
-    emit_bytes(out, code, code_size);
-    pad_to(out, file_align);
-
-    /* .IDATA Section Body */
-    while (out->size < idata_raw)
-    {
-        emit_u8(out, 0);
-    }
-    emit_idata(out, idata_rva, imports); /* Write the actual data */
-    pad_to(out, file_align);
+    return iat_base_rva + offset;
 }
+
+/* #############################################################################
+ * # [SECTION] PE32+ Builder
+ * #############################################################################
+ */
+
+void emit_pe32_file(
+    buffer *out,
+    buffer *code,
+    thrive_import *imports,
+    u32 num_imports,
+    u32 text_vsize)
+{
+    u32 i, j;
+    u32 num_funcs = 0;
+    u32 strings_size = 0;
+
+    /* Calculate Import String sizes */
+    for (i = 0; i < num_imports; ++i)
+    {
+        num_funcs += imports[i].imports_count;
+        strings_size += thrive_string_length(imports[i].library) + 1;
+        for (j = 0; j < imports[i].imports_count; j++)
+        {
+            strings_size += 2 + thrive_string_length((s8 *)imports[i].imports[j]) + 1; /* 2 bytes for Hint */
+        }
+    }
+
+    /* Section Layout Calculations */
+    u32 idt_size = (num_imports + 1) * 20;
+    u32 ilt_size = (num_funcs + num_imports) * 8;
+    u32 iat_size = ilt_size;
+
+    u32 text_rva = 0x1000;
+    u32 text_raw_size = align_up(code->size, 0x200);
+
+    u32 rdata_rva = text_rva + align_up(text_vsize, 0x1000);
+    u32 rdata_vsize = idt_size + ilt_size + iat_size + strings_size;
+    u32 rdata_raw_size = align_up(rdata_vsize, 0x200);
+
+    u32 idt_rva = rdata_rva;
+    u32 ilt_rva = idt_rva + idt_size;
+    u32 iat_rva = ilt_rva + ilt_size;
+    u32 strings_rva = iat_rva + iat_size;
+
+    /* Write DOS Header */
+    emit_u16(out, 0x5A4D); /* MZ */
+    pad_to(out, 0x3C);
+    emit_u32(out, 0x40); /* e_lfanew */
+
+    /* Write NT Headers */
+    emit_u32(out, 0x00004550); /* PE\0\0 */
+    emit_u16(out, 0x8664);     /* Machine: AMD64 */
+    emit_u16(out, 2);          /* NumberOfSections */
+    emit_u32(out, 0);          /* TimeDateStamp */
+    emit_u32(out, 0);          /* PointerToSymbolTable */
+    emit_u32(out, 0);          /* NumberOfSymbols */
+    emit_u16(out, 0xF0);       /* SizeOfOptionalHeader */
+    emit_u16(out, 0x0022);     /* Characteristics (Exec, LargeAddr) */
+
+    /* Write Optional Header (PE32+) */
+    emit_u16(out, 0x020B);                /* Magic */
+    emit_u8(out, 1);                      /* MajorLinkerVersion */
+    emit_u8(out, 0);                      /* MinorLinkerVersion */
+    emit_u32(out, text_raw_size);         /* SizeOfCode */
+    emit_u32(out, rdata_raw_size);        /* SizeOfInitializedData */
+    emit_u32(out, 0);                     /* SizeOfUninitializedData */
+    emit_u32(out, text_rva);              /* AddressOfEntryPoint */
+    emit_u32(out, text_rva);              /* BaseOfCode */
+    emit_u64(out, 0x0000000140000000ULL); /* ImageBase */
+    emit_u32(out, 0x1000);                /* SectionAlignment */
+    emit_u32(out, 0x200);                 /* FileAlignment */
+    emit_u16(out, 5);
+    emit_u16(out, 2); /* OSMajor / OSMinor */
+    emit_u16(out, 0);
+    emit_u16(out, 0); /* ImageMajor / ImageMinor */
+    emit_u16(out, 5);
+    emit_u16(out, 2);                                         /* SubSysMajor / SubSysMinor */
+    emit_u32(out, 0);                                         /* Win32VersionValue */
+    emit_u32(out, align_up(rdata_rva + rdata_vsize, 0x1000)); /* SizeOfImage */
+    emit_u32(out, 0x200);                                     /* SizeOfHeaders */
+    emit_u32(out, 0);                                         /* CheckSum */
+    emit_u16(out, 3);                                         /* Subsystem (3 = Windows CUI Console) */
+    emit_u16(out, 0x8140);                                    /* DllCharacteristics (NX, DynBase, HighEnt) */
+    emit_u64(out, 0x100000);                                  /* SizeOfStackReserve */
+    emit_u64(out, 0x1000);                                    /* SizeOfStackCommit */
+    emit_u64(out, 0x100000);                                  /* SizeOfHeapReserve */
+    emit_u64(out, 0x1000);                                    /* SizeOfHeapCommit */
+    emit_u32(out, 0);                                         /* LoaderFlags */
+    emit_u32(out, 16);                                        /* NumberOfRvaAndSizes */
+
+    /* Data Directories */
+    emit_u32(out, 0);
+    emit_u32(out, 0); /* Export Directory */
+    emit_u32(out, idt_rva);
+    emit_u32(out, idt_size); /* Import Directory */
+
+    for (i = 2; i < 16; ++i)
+    {
+        emit_u32(out, 0);
+        emit_u32(out, 0);
+    }
+
+    /* Section Header: .text */
+    emit_bytes(out, (u8 *)".text\0\0\0", 8);
+    emit_u32(out, code->size);    /* VirtualSize */
+    emit_u32(out, text_rva);      /* VirtualAddress */
+    emit_u32(out, text_raw_size); /* SizeOfRawData */
+    emit_u32(out, 0x200);         /* PointerToRawData */
+    emit_u32(out, 0);
+    emit_u32(out, 0);
+    emit_u16(out, 0);
+    emit_u16(out, 0);
+    emit_u32(out, 0x60000020); /* Characteristics (RX) */
+
+    /* Section Header: .rdata */
+    emit_bytes(out, (u8 *)".rdata\0\0", 8);
+    emit_u32(out, rdata_vsize);           /* VirtualSize */
+    emit_u32(out, rdata_rva);             /* VirtualAddress */
+    emit_u32(out, rdata_raw_size);        /* SizeOfRawData */
+    emit_u32(out, 0x200 + text_raw_size); /* PointerToRawData */
+    emit_u32(out, 0);
+    emit_u32(out, 0);
+    emit_u16(out, 0);
+    emit_u16(out, 0);
+    emit_u32(out, 0x40000040); /* Characteristics (R) */
+
+    pad_to(out, 0x200); /* Pad Header to File Alignment */
+
+    /* Write .text Data */
+    emit_bytes(out, code->data, code->size);
+    pad_to(out, 0x200);
+
+    /* Write .rdata Data (Imports) */
+    u32 current_dll_name_rva = strings_rva;
+    u32 current_func_name_rva = strings_rva;
+    for (i = 0; i < num_imports; i++)
+    {
+        current_func_name_rva += thrive_string_length(imports[i].library) + 1;
+    }
+
+    u32 current_ilt_rva = ilt_rva;
+    u32 current_iat_rva = iat_rva;
+
+    /* Write Import Descriptor Table (IDT) */
+    for (i = 0; i < num_imports; ++i)
+    {
+        emit_u32(out, current_ilt_rva);
+        emit_u32(out, 0);
+        emit_u32(out, 0);
+        emit_u32(out, current_dll_name_rva);
+        emit_u32(out, current_iat_rva);
+
+        current_dll_name_rva += thrive_string_length(imports[i].library) + 1;
+        current_ilt_rva += (imports[i].imports_count + 1) * 8;
+        current_iat_rva += (imports[i].imports_count + 1) * 8;
+    }
+
+    emit_u32(out, 0);
+    emit_u32(out, 0);
+    emit_u32(out, 0);
+    emit_u32(out, 0);
+    emit_u32(out, 0);
+
+    /* Write Import Lookup Table (ILT) & Import Address Table (IAT) */
+    i32 table;
+    for (table = 0; table < 2; ++table)
+    {
+        u32 temp_name_rva = current_func_name_rva;
+        for (i = 0; i < num_imports; ++i)
+        {
+            for (j = 0; j < imports[i].imports_count; ++j)
+            {
+                emit_u64(out, temp_name_rva);
+                temp_name_rva += 2 + thrive_string_length((s8 *)imports[i].imports[j]) + 1;
+            }
+            emit_u64(out, 0); /* Null thunk bounds the array */
+        }
+    }
+
+    /* Write Import Strings: DLL Names */
+    for (i = 0; i < num_imports; ++i)
+    {
+        emit_bytes(out, (u8 *)imports[i].library, thrive_string_length(imports[i].library) + 1);
+    }
+    /* Write Import Strings: Function Names */
+    for (i = 0; i < num_imports; ++i)
+    {
+        for (j = 0; j < imports[i].imports_count; ++j)
+        {
+            emit_u16(out, 0); /* Ordinal Hint */
+            emit_bytes(out, (u8 *)imports[i].imports[j], thrive_string_length((s8 *)imports[i].imports[j]) + 1);
+        }
+    }
+
+    pad_to(out, 0x200); /* Final File Alignment Pad */
+}
+
+/* #############################################################################
+ * # [SECTION] Import Directory
+ * #############################################################################
+ */
 
 int main(void)
 {
-    /* Define Imports */
-    s8 *k32_funcs[] = {"ExitProcess", "Sleep"};
-    u32 k32_iats[2] = {0};
-
-    /* Example of a second library */
+    /* 1. Define Imports */
+    s8 *k32_funcs[] = {"Sleep", "ExitProcess"};
     s8 *u32_funcs[] = {"MessageBoxA"};
-    u32 u32_iats[1] = {0};
 
     thrive_import imports[] = {
-        {"kernel32.dll", k32_funcs, 2, k32_iats},
-        {"user32.dll", u32_funcs, 1, u32_iats},
-        {NULL, NULL, 0, NULL} /* Null terminator */
+        {"kernel32.dll", k32_funcs, 2},
+        {"user32.dll", u32_funcs, 1},
     };
 
-    /* 1. Dry Run to Resolve IAT RVAs */
-    buffer buf = {0};
-    buf.data = (u8 *)malloc(8192 * sizeof(u8));
-    buf.capacity = 8192;
+    u32 imports_count = sizeof(imports) / sizeof(imports[0]);
 
-    u32 estimated_text_virt_size = 0x1000;
-    u32 idata_rva_base = 0x1000 + estimated_text_virt_size;
+    u32 text_vsize = 0x1000;
 
-    emit_idata(&buf, idata_rva_base, imports);
+    /* 2. Pre-calculate IAT RVAs dynamically */
+    u32 sleep_rva = get_iat_rva(imports, imports_count, text_vsize, 0, 0);
+    u32 exit_rva = get_iat_rva(imports, imports_count, text_vsize, 0, 1);
+    u32 messagebox_rva = get_iat_rva(imports, imports_count, text_vsize, 1, 0);
 
-    /* 2. Machine Code Generation */
+    /* 3. Machine Code Generation */
     u8 code[256];
     buffer codebuf = {0};
     codebuf.data = code;
 
-    /* Sleep(2000) */
-    emit_alu_ri8(&codebuf, OP_EXT_SUB, REG_RSP, 32); /* sub rsp, 32 */
-    emit_mov_ri32(&codebuf, REG_RCX, 2000);          /* mov rcx, 2000 */
-    emit_inst_call_rel32(&codebuf, 0x1000 + codebuf.size, k32_iats[1]);
-    emit_alu_ri8(&codebuf, OP_EXT_ADD, REG_RSP, 32); /* add rsp, 32 */
-
-    /* ExitProcess(0) */
-    emit_alu_ri8(&codebuf, OP_EXT_SUB, REG_RSP, 32); /* sub rsp, 32 */
-    emit_xor_rr(&codebuf, REG_RCX, REG_RCX);
-    emit_inst_call_rel32(&codebuf, 0x1000 + codebuf.size, k32_iats[0]); /* ExitProcess IAT */
-    emit_alu_ri8(&codebuf, OP_EXT_ADD, REG_RSP, 32);                    /* add rsp, 32 */
-
-    /* 3. Build PE */
-    emit_x86_64_pe32_plus(imports, &buf, codebuf.data, codebuf.size);
-
-    FILE *f = fopen("out.exe", "wb");
-
-    if (f)
     {
-        fwrite(buf.data, 1, buf.size, f);
-        fclose(f);
+        /* --- Call 1: Sleep(2000) --- */
+        /* Allocate 32 bytes shadow space + 8 bytes to align stack to 16 bytes */
+        emit_alu_ri8(&codebuf, OP_EXT_SUB, REG_RSP, 40);
+        emit_mov_ri32(&codebuf, REG_RCX, 2000);
+        emit_inst_call_rel32(&codebuf, 0x1000 + codebuf.size, sleep_rva);
+        emit_alu_ri8(&codebuf, OP_EXT_ADD, REG_RSP, 40);
+
+        /* --- Call 2: MessageBoxA(0, "Thrive", "Thrive", 0) --- */
+        /* "Thrive\0\0" represented as a Little Endian 64-bit integer */
+        emit_mov_ri64(&codebuf, REG_RAX, 0x0000657669726854ULL);
+        emit_push_r(&codebuf, REG_RAX);
+
+        /* Set up string pointers from the stack pointer */
+        emit_mov_rr(&codebuf, REG_RDX, REG_RSP); /* lpText */
+        emit_mov_rr(&codebuf, REG_R8, REG_RSP);  /* lpCaption */
+        emit_xor_rr(&codebuf, REG_RCX, REG_RCX); /* hWnd = 0 */
+        emit_xor_rr(&codebuf, REG_R9, REG_R9);   /* uType = MB_OK (0) */
+
+        /* Allocate the 32-byte shadow space for the call */
+        emit_alu_ri8(&codebuf, OP_EXT_SUB, REG_RSP, 32);
+        emit_inst_call_rel32(&codebuf, 0x1000 + codebuf.size, messagebox_rva);
+
+        /* Cleanup: 32 bytes shadow space + 8 bytes pushed string */
+        emit_alu_ri8(&codebuf, OP_EXT_ADD, REG_RSP, 40);
+
+        /* --- Call 3: ExitProcess(0) --- */
+        emit_alu_ri8(&codebuf, OP_EXT_SUB, REG_RSP, 40);
+        emit_xor_rr(&codebuf, REG_RCX, REG_RCX);
+        emit_inst_call_rel32(&codebuf, 0x1000 + codebuf.size, exit_rva);
     }
 
-    free(buf.data);
-    printf("finished\n");
+    /* 4. Emit PE File */
+    u8 pe_data[8192];
+    buffer pe_buf = {0};
+    pe_buf.data = pe_data;
+
+    /* FIX: Passed 2 as the num_imports argument! */
+    emit_pe32_file(
+        &pe_buf,
+        &codebuf,
+        imports,
+        imports_count,
+        text_vsize);
+
+    /* Output */
+    FILE *f = fopen("out.exe", "wb");
+    if (f)
+    {
+        fwrite(pe_buf.data, 1, pe_buf.size, f);
+        fclose(f);
+        printf("Successfully generated out.exe (%u bytes).\n", pe_buf.size);
+    }
 
     return 0;
 }
