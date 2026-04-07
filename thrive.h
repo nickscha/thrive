@@ -2072,6 +2072,11 @@ void thrive_pe32_plus_generate(
     u32 strings_rva = iat_rva + iat_size;
     u32 size_of_image = thrive_align_up(rdata_rva + rdata_vsize, 0x1000);
 
+    u32 current_dll_name_rva = strings_rva;
+    u32 current_func_name_rva = strings_rva;
+    u32 current_ilt_rva = ilt_rva;
+    u32 current_iat_rva = iat_rva;
+
     /* Write DOS Header */
     thrive_buffer_write_u16(out, 0x5A4D); /* MZ */
     thrive_buffer_align(out, 0x3C);       /* */
@@ -2165,71 +2170,64 @@ void thrive_pe32_plus_generate(
     thrive_buffer_write_bytes(out, code->data, code->size);
     thrive_buffer_align(out, 0x200);
 
+    /* Write .rdata Data (Imports) */
+    for (i = 0; i < num_imports; ++i)
     {
-        /* Write .rdata Data (Imports) */
-        u32 current_dll_name_rva = strings_rva;
-        u32 current_func_name_rva = strings_rva;
-        u32 current_ilt_rva = ilt_rva;
-        u32 current_iat_rva = iat_rva;
+        current_func_name_rva += thrive_string_length(imports[i].library) + 1;
+    }
 
-        for (i = 0; i < num_imports; ++i)
+    /* Write Import Descriptor Table (IDT) */
+    for (i = 0; i < num_imports; ++i)
+    {
+        thrive_buffer_write_u32(out, current_ilt_rva);
+        thrive_buffer_write_u32(out, 0);
+        thrive_buffer_write_u32(out, 0);
+        thrive_buffer_write_u32(out, current_dll_name_rva);
+        thrive_buffer_write_u32(out, current_iat_rva);
+
+        current_dll_name_rva += thrive_string_length(imports[i].library) + 1;
+        current_ilt_rva += (imports[i].imports_count + 1) * 8;
+        current_iat_rva += (imports[i].imports_count + 1) * 8;
+    }
+
+    thrive_buffer_write_u32(out, 0);
+    thrive_buffer_write_u32(out, 0);
+    thrive_buffer_write_u32(out, 0);
+    thrive_buffer_write_u32(out, 0);
+    thrive_buffer_write_u32(out, 0);
+
+    /* Write Import Lookup Table (ILT) & Import Address Table (IAT) */
+    {
+        i32 table;
+
+        for (table = 0; table < 2; ++table)
         {
-            current_func_name_rva += thrive_string_length(imports[i].library) + 1;
-        }
+            u32 temp_name_rva = current_func_name_rva;
 
-        /* Write Import Descriptor Table (IDT) */
-        for (i = 0; i < num_imports; ++i)
-        {
-            thrive_buffer_write_u32(out, current_ilt_rva);
-            thrive_buffer_write_u32(out, 0);
-            thrive_buffer_write_u32(out, 0);
-            thrive_buffer_write_u32(out, current_dll_name_rva);
-            thrive_buffer_write_u32(out, current_iat_rva);
-
-            current_dll_name_rva += thrive_string_length(imports[i].library) + 1;
-            current_ilt_rva += (imports[i].imports_count + 1) * 8;
-            current_iat_rva += (imports[i].imports_count + 1) * 8;
-        }
-
-        thrive_buffer_write_u32(out, 0);
-        thrive_buffer_write_u32(out, 0);
-        thrive_buffer_write_u32(out, 0);
-        thrive_buffer_write_u32(out, 0);
-        thrive_buffer_write_u32(out, 0);
-
-        /* Write Import Lookup Table (ILT) & Import Address Table (IAT) */
-        {
-            i32 table;
-
-            for (table = 0; table < 2; ++table)
-            {
-                u32 temp_name_rva = current_func_name_rva;
-
-                for (i = 0; i < num_imports; ++i)
-                {
-                    for (j = 0; j < imports[i].imports_count; ++j)
-                    {
-                        thrive_buffer_write_u64(out, temp_name_rva);
-                        temp_name_rva += 2 + thrive_string_length((s8 *)imports[i].imports[j]) + 1;
-                    }
-                    thrive_buffer_write_u64(out, 0); /* Null thunk bounds the array */
-                }
-            }
-
-            /* Write Import Strings: DLL Names */
-            for (i = 0; i < num_imports; ++i)
-            {
-                thrive_buffer_write_bytes(out, (u8 *)imports[i].library, thrive_string_length(imports[i].library) + 1);
-            }
-
-            /* Write Import Strings: Function Names */
             for (i = 0; i < num_imports; ++i)
             {
                 for (j = 0; j < imports[i].imports_count; ++j)
                 {
-                    thrive_buffer_write_u16(out, 0); /* Ordinal Hint */
-                    thrive_buffer_write_bytes(out, (u8 *)imports[i].imports[j], thrive_string_length((s8 *)imports[i].imports[j]) + 1);
+                    thrive_buffer_write_u64(out, temp_name_rva);
+                    temp_name_rva += 2 + thrive_string_length((s8 *)imports[i].imports[j]) + 1;
                 }
+                thrive_buffer_write_u64(out, 0); /* Null thunk bounds the array */
+            }
+        }
+
+        /* Write Import Strings: DLL Names */
+        for (i = 0; i < num_imports; ++i)
+        {
+            thrive_buffer_write_bytes(out, (u8 *)imports[i].library, thrive_string_length(imports[i].library) + 1);
+        }
+
+        /* Write Import Strings: Function Names */
+        for (i = 0; i < num_imports; ++i)
+        {
+            for (j = 0; j < imports[i].imports_count; ++j)
+            {
+                thrive_buffer_write_u16(out, 0); /* Ordinal Hint */
+                thrive_buffer_write_bytes(out, (u8 *)imports[i].imports[j], thrive_string_length((s8 *)imports[i].imports[j]) + 1);
             }
         }
     }
