@@ -493,16 +493,16 @@ THRIVE_API THRIVE_INLINE void thrive_buffer_write_u8(thrive_buffer *b, u8 value)
 
 THRIVE_API THRIVE_INLINE void thrive_buffer_write_u16(thrive_buffer *b, u16 value)
 {
-    thrive_buffer_write_u8(b, value & 0xFF);
-    thrive_buffer_write_u8(b, (value >> 8) & 0xFF);
+    thrive_buffer_write_u8(b, (u8)(value & 0xFF));
+    thrive_buffer_write_u8(b, (u8)((value >> 8) & 0xFF));
 }
 
 THRIVE_API THRIVE_INLINE void thrive_buffer_write_u32(thrive_buffer *b, u32 value)
 {
-    thrive_buffer_write_u8(b, value & 0xFF);
-    thrive_buffer_write_u8(b, (value >> 8) & 0xFF);
-    thrive_buffer_write_u8(b, (value >> 16) & 0xFF);
-    thrive_buffer_write_u8(b, (value >> 24) & 0xFF);
+    thrive_buffer_write_u8(b, (u8)(value & 0xFF));
+    thrive_buffer_write_u8(b, (u8)((value >> 8) & 0xFF));
+    thrive_buffer_write_u8(b, (u8)((value >> 16) & 0xFF));
+    thrive_buffer_write_u8(b, (u8)((value >> 24) & 0xFF));
 }
 
 THRIVE_API THRIVE_INLINE void thrive_buffer_write_u64(thrive_buffer *b, u64 value)
