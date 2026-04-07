@@ -154,6 +154,13 @@ void emit_alu_ri8(buffer *b, u8 op_ext, x64_reg dst, u8 imm)
     emit_u8(b, imm);
 }
 
+/* [rbp + disp32] */
+void emit_modrm_disp32(buffer *b, x64_reg reg, x64_reg base, i32 disp)
+{
+    emit_u8(b, 0x80 | ((reg & 7) << 3) | (base & 7)); /* mod=10 */
+    emit_u32(b, disp);
+}
+
 /* MOV reg, imm32 */
 void emit_mov_ri32(buffer *b, x64_reg dst, u32 imm)
 {
@@ -171,6 +178,63 @@ void emit_mov_ri64(buffer *b, x64_reg dst, u64 imm)
     emit_u64(b, imm);
 }
 
+/* mov r64, [rbp+disp] */
+void emit_mov_r_mrbp(buffer *b, x64_reg dst, i32 disp)
+{
+    emit_rex(b, 1, dst, REG_RBP);
+    emit_u8(b, 0x8B);
+    emit_modrm_disp32(b, dst, REG_RBP, disp);
+}
+
+/* mov [rbp+disp], r64 */
+void emit_mov_mrbp_r(buffer *b, i32 disp, x64_reg src)
+{
+    emit_rex(b, 1, src, REG_RBP);
+    emit_u8(b, 0x89);
+    emit_modrm_disp32(b, src, REG_RBP, disp);
+}
+
+/* lea r64, [rbp+disp] */
+void emit_lea_r_mrbp(buffer *b, x64_reg dst, i32 disp)
+{
+    emit_rex(b, 1, dst, REG_RBP);
+    emit_u8(b, 0x8D);
+    emit_modrm_disp32(b, dst, REG_RBP, disp);
+}
+
+/* MOV reg, reg */
+void emit_mov_rr(buffer *b, x64_reg dst, x64_reg src)
+{
+    emit_rex(b, 1, dst, src);
+    emit_u8(b, 0x8B);
+    emit_modrm_reg(b, dst, src);
+}
+
+/* mov rax, [rax] */
+void emit_mov_r_mr(buffer *b, x64_reg dst, x64_reg base)
+{
+    emit_rex(b, 1, dst, base);
+    emit_u8(b, 0x8B);
+    emit_modrm_reg(b, dst, base);
+}
+
+/* mov [rax], rbx */
+void emit_mov_mr_r(buffer *b, x64_reg base, x64_reg src)
+{
+    emit_rex(b, 1, src, base);
+    emit_u8(b, 0x89);
+    emit_modrm_reg(b, src, base);
+}
+
+/* movzx rax, al */
+void emit_movzx_rax_al(buffer *b)
+{
+    emit_u8(b, 0x48);
+    emit_u8(b, 0x0F);
+    emit_u8(b, 0xB6);
+    emit_u8(b, 0xC0);
+}
+
 /* PUSH reg */
 void emit_push_r(buffer *b, x64_reg reg)
 {
@@ -181,6 +245,16 @@ void emit_push_r(buffer *b, x64_reg reg)
     emit_u8(b, 0x50 | (reg & 7));
 }
 
+/* POP reg */
+void emit_pop_r(buffer *b, x64_reg reg)
+{
+    if (reg >= 8)
+    {
+        emit_u8(b, 0x41);
+    }
+    emit_u8(b, 0x58 | (reg & 7));
+}
+
 /* XOR reg, reg */
 void emit_xor_rr(buffer *b, x64_reg dst, x64_reg src)
 {
@@ -189,12 +263,75 @@ void emit_xor_rr(buffer *b, x64_reg dst, x64_reg src)
     emit_modrm_reg(b, src, dst);
 }
 
-/* MOV reg, reg */
-void emit_mov_rr(buffer *b, x64_reg dst, x64_reg src)
+/* add r64, r64 */
+void emit_add_rr(buffer *b, x64_reg dst, x64_reg src)
+{
+    emit_rex(b, 1, src, dst);
+    emit_u8(b, 0x01);
+    emit_modrm_reg(b, src, dst);
+}
+
+/* sub r64, r64 */
+void emit_sub_rr(buffer *b, x64_reg dst, x64_reg src)
+{
+    emit_rex(b, 1, src, dst);
+    emit_u8(b, 0x29);
+    emit_modrm_reg(b, src, dst);
+}
+
+/* imul r64, r64 */
+void emit_imul_rr(buffer *b, x64_reg dst, x64_reg src)
 {
     emit_rex(b, 1, dst, src);
-    emit_u8(b, 0x8B);
+    emit_u8(b, 0x0F);
+    emit_u8(b, 0xAF);
     emit_modrm_reg(b, dst, src);
+}
+
+/* cmp r64, r64 */
+void emit_cmp_rr(buffer *b, x64_reg a, x64_reg rb)
+{
+    emit_rex(b, 1, rb, a);
+    emit_u8(b, 0x39);
+    emit_modrm_reg(b, rb, a);
+}
+
+/* setcc */
+#define CC_E 4
+#define CC_NE 5
+#define CC_L 12
+#define CC_LE 14
+#define CC_G 15
+#define CC_GE 13
+
+void emit_setcc(buffer *b, u8 cc)
+{
+    emit_u8(b, 0x0F);
+    emit_u8(b, 0x90 | cc); /* cc = condition */
+    emit_u8(b, 0xC0);      /* AL */
+}
+
+/* jmp rel32 */
+void emit_jmp(buffer *b, i32 rel)
+{
+    emit_u8(b, 0xE9);
+    emit_u32(b, rel);
+}
+
+/* je / jne / etc */
+void emit_jcc(buffer *b, u8 cc, i32 rel)
+{
+    emit_u8(b, 0x0F);
+    emit_u8(b, 0x80 | cc);
+    emit_u32(b, rel);
+}
+
+/* direct call */
+void emit_call_rel32(buffer *b, u32 curr_rva, u32 target_rva)
+{
+    u32 rel = target_rva - (curr_rva + 5);
+    emit_u8(b, 0xE8);
+    emit_u32(b, rel);
 }
 
 void emit_inst_call_rel32(buffer *b, u32 curr_rva, u32 target_rva)
