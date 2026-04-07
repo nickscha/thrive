@@ -268,263 +268,6 @@ void emit_inst_call_rel32(thrive_buffer *b, u32 curr_rva, u32 target_rva)
 }
 
 /* #############################################################################
- * # [SECTION] PE Utilities
- * #############################################################################
- */
-typedef struct thrive_import
-{
-    s8 *library;       /* e.g. "kernel32.dll" */
-    s8 **imports;      /* e.g. "ExitProcess", "Sleep" */
-    u32 imports_count; /* count of imports entries */
-
-} thrive_import;
-
-static u32 align_up(u32 val, u32 align)
-{
-    if (align == 0)
-    {
-        return val;
-    }
-    return (val + align - 1) & ~(align - 1);
-}
-
-/* * Allows your emitter to fetch the exact IAT target RVA for a specific
- * function before generating the instruction, avoiding a 2-pass fixup.
- */
-u32 get_iat_rva(thrive_import *imports, u32 num_imports, u32 text_vsize, u32 dll_index, u32 func_index)
-{
-    u32 text_rva = 0x1000;
-    u32 rdata_rva = text_rva + align_up(text_vsize, 0x1000);
-    u32 idt_size = (num_imports + 1) * 20;
-
-    u32 num_funcs = 0;
-    u32 i;
-
-    for (i = 0; i < num_imports; ++i)
-    {
-        num_funcs += imports[i].imports_count;
-    }
-
-    u32 ilt_size = (num_funcs + num_imports) * 8;
-    u32 iat_base_rva = rdata_rva + idt_size + ilt_size;
-
-    u32 offset = 0;
-
-    for (i = 0; i < dll_index; ++i)
-    {
-        offset += (imports[i].imports_count + 1) * 8;
-    }
-
-    offset += func_index * 8;
-
-    return iat_base_rva + offset;
-}
-
-/* #############################################################################
- * # [SECTION] PE32+ Builder
- * #############################################################################
- */
-
-void emit_pe32_file(
-    thrive_buffer *out,
-    thrive_buffer *code,
-    thrive_import *imports,
-    u32 num_imports,
-    u32 text_vsize)
-{
-    u32 i, j;
-    u32 num_funcs = 0;
-    u32 strings_size = 0;
-
-    /* Calculate Import String sizes */
-    for (i = 0; i < num_imports; ++i)
-    {
-        num_funcs += imports[i].imports_count;
-        strings_size += thrive_string_length(imports[i].library) + 1;
-        for (j = 0; j < imports[i].imports_count; j++)
-        {
-            strings_size += 2 + thrive_string_length((s8 *)imports[i].imports[j]) + 1; /* 2 bytes for Hint */
-        }
-    }
-
-    /* Section Layout Calculations */
-    u32 idt_size = (num_imports + 1) * 20;
-    u32 ilt_size = (num_funcs + num_imports) * 8;
-    u32 iat_size = ilt_size;
-
-    u32 text_rva = 0x1000;
-    u32 text_raw_size = align_up(code->size, 0x200);
-
-    u32 rdata_rva = text_rva + align_up(text_vsize, 0x1000);
-    u32 rdata_vsize = idt_size + ilt_size + iat_size + strings_size;
-    u32 rdata_raw_size = align_up(rdata_vsize, 0x200);
-
-    u32 idt_rva = rdata_rva;
-    u32 ilt_rva = idt_rva + idt_size;
-    u32 iat_rva = ilt_rva + ilt_size;
-    u32 strings_rva = iat_rva + iat_size;
-    u32 size_of_image = align_up(rdata_rva + rdata_vsize, 0x1000);
-
-    /* Write DOS Header */
-    thrive_buffer_write_u16(out, 0x5A4D); /* MZ */
-    thrive_buffer_align(out, 0x3C);       /* */
-    thrive_buffer_write_u32(out, 0x40);   /* e_lfanew */
-
-    /* Write NT Headers */
-    thrive_buffer_write_u32(out, 0x00004550); /* PE\0\0 */
-    thrive_buffer_write_u16(out, 0x8664);     /* Machine: AMD64 */
-    thrive_buffer_write_u16(out, 2);          /* NumberOfSections */
-    thrive_buffer_write_u32(out, 0);          /* TimeDateStamp */
-    thrive_buffer_write_u32(out, 0);          /* PointerToSymbolTable */
-    thrive_buffer_write_u32(out, 0);          /* NumberOfSymbols */
-    thrive_buffer_write_u16(out, 0xF0);       /* SizeOfOptionalHeader */
-    thrive_buffer_write_u16(out, 0x0022);     /* Characteristics (Exec, LargeAddr) */
-
-    /* Write Optional Header (PE32+) */
-    thrive_buffer_write_u16(out, 0x020B);                /* Magic */
-    thrive_buffer_write_u8(out, 1);                      /* MajorLinkerVersion */
-    thrive_buffer_write_u8(out, 0);                      /* MinorLinkerVersion */
-    thrive_buffer_write_u32(out, text_raw_size);         /* SizeOfCode */
-    thrive_buffer_write_u32(out, rdata_raw_size);        /* SizeOfInitializedData */
-    thrive_buffer_write_u32(out, 0);                     /* SizeOfUninitializedData */
-    thrive_buffer_write_u32(out, text_rva);              /* AddressOfEntryPoint */
-    thrive_buffer_write_u32(out, text_rva);              /* BaseOfCode */
-    thrive_buffer_write_u64(out, 0x0000000140000000ULL); /* ImageBase */
-    thrive_buffer_write_u32(out, 0x1000);                /* SectionAlignment */
-    thrive_buffer_write_u32(out, 0x200);                 /* FileAlignment */
-    thrive_buffer_write_u16(out, 5);                     /* */
-    thrive_buffer_write_u16(out, 2);                     /* OSMajor / OSMinor */
-    thrive_buffer_write_u16(out, 0);                     /* */
-    thrive_buffer_write_u16(out, 0);                     /* ImageMajor / ImageMinor */
-    thrive_buffer_write_u16(out, 5);                     /* */
-    thrive_buffer_write_u16(out, 2);                     /* SubSysMajor / SubSysMinor */
-    thrive_buffer_write_u32(out, 0);                     /* Win32VersionValue */
-    thrive_buffer_write_u32(out, size_of_image);         /* SizeOfImage */
-    thrive_buffer_write_u32(out, 0x200);                 /* SizeOfHeaders */
-    thrive_buffer_write_u32(out, 0);                     /* CheckSum */
-    thrive_buffer_write_u16(out, 3);                     /* Subsystem (3 = Windows CUI Console) */
-    thrive_buffer_write_u16(out, 0x8140);                /* DllCharacteristics (NX, DynBase, HighEnt) */
-    thrive_buffer_write_u64(out, 0x100000);              /* SizeOfStackReserve */
-    thrive_buffer_write_u64(out, 0x1000);                /* SizeOfStackCommit */
-    thrive_buffer_write_u64(out, 0x100000);              /* SizeOfHeapReserve */
-    thrive_buffer_write_u64(out, 0x1000);                /* SizeOfHeapCommit */
-    thrive_buffer_write_u32(out, 0);                     /* LoaderFlags */
-    thrive_buffer_write_u32(out, 16);                    /* NumberOfRvaAndSizes */
-
-    /* Data Directories */
-    thrive_buffer_write_u32(out, 0);
-    thrive_buffer_write_u32(out, 0); /* Export Directory */
-    thrive_buffer_write_u32(out, idt_rva);
-    thrive_buffer_write_u32(out, idt_size); /* Import Directory */
-
-    for (i = 2; i < 16; ++i)
-    {
-        thrive_buffer_write_u32(out, 0);
-        thrive_buffer_write_u32(out, 0);
-    }
-
-    /* Section Header: .text */
-    thrive_buffer_write_bytes(out, (u8 *)".text\0\0\0", 8);
-    thrive_buffer_write_u32(out, code->size);    /* VirtualSize */
-    thrive_buffer_write_u32(out, text_rva);      /* VirtualAddress */
-    thrive_buffer_write_u32(out, text_raw_size); /* SizeOfRawData */
-    thrive_buffer_write_u32(out, 0x200);         /* PointerToRawData */
-    thrive_buffer_write_u32(out, 0);             /* */
-    thrive_buffer_write_u32(out, 0);             /* */
-    thrive_buffer_write_u16(out, 0);             /* */
-    thrive_buffer_write_u16(out, 0);             /* */
-    thrive_buffer_write_u32(out, 0x60000020);    /* Characteristics (RX) */
-
-    /* Section Header: .rdata */
-    thrive_buffer_write_bytes(out, (u8 *)".rdata\0\0", 8);
-    thrive_buffer_write_u32(out, rdata_vsize);           /* VirtualSize */
-    thrive_buffer_write_u32(out, rdata_rva);             /* VirtualAddress */
-    thrive_buffer_write_u32(out, rdata_raw_size);        /* SizeOfRawData */
-    thrive_buffer_write_u32(out, 0x200 + text_raw_size); /* PointerToRawData */
-    thrive_buffer_write_u32(out, 0);                     /* */
-    thrive_buffer_write_u32(out, 0);                     /* */
-    thrive_buffer_write_u16(out, 0);                     /* */
-    thrive_buffer_write_u16(out, 0);                     /* */
-    thrive_buffer_write_u32(out, 0x40000040);            /* Characteristics (R) */
-
-    thrive_buffer_align(out, 0x200); /* Pad Header to File Alignment */
-
-    /* Write .text Data */
-    thrive_buffer_write_bytes(out, code->data, code->size);
-    thrive_buffer_align(out, 0x200);
-
-    /* Write .rdata Data (Imports) */
-    u32 current_dll_name_rva = strings_rva;
-    u32 current_func_name_rva = strings_rva;
-
-    for (i = 0; i < num_imports; ++i)
-    {
-        current_func_name_rva += thrive_string_length(imports[i].library) + 1;
-    }
-
-    u32 current_ilt_rva = ilt_rva;
-    u32 current_iat_rva = iat_rva;
-
-    /* Write Import Descriptor Table (IDT) */
-    for (i = 0; i < num_imports; ++i)
-    {
-        thrive_buffer_write_u32(out, current_ilt_rva);
-        thrive_buffer_write_u32(out, 0);
-        thrive_buffer_write_u32(out, 0);
-        thrive_buffer_write_u32(out, current_dll_name_rva);
-        thrive_buffer_write_u32(out, current_iat_rva);
-
-        current_dll_name_rva += thrive_string_length(imports[i].library) + 1;
-        current_ilt_rva += (imports[i].imports_count + 1) * 8;
-        current_iat_rva += (imports[i].imports_count + 1) * 8;
-    }
-
-    thrive_buffer_write_u32(out, 0);
-    thrive_buffer_write_u32(out, 0);
-    thrive_buffer_write_u32(out, 0);
-    thrive_buffer_write_u32(out, 0);
-    thrive_buffer_write_u32(out, 0);
-
-    /* Write Import Lookup Table (ILT) & Import Address Table (IAT) */
-    {
-        i32 table;
-
-        for (table = 0; table < 2; ++table)
-        {
-            u32 temp_name_rva = current_func_name_rva;
-
-            for (i = 0; i < num_imports; ++i)
-            {
-                for (j = 0; j < imports[i].imports_count; ++j)
-                {
-                    thrive_buffer_write_u64(out, temp_name_rva);
-                    temp_name_rva += 2 + thrive_string_length((s8 *)imports[i].imports[j]) + 1;
-                }
-                thrive_buffer_write_u64(out, 0); /* Null thunk bounds the array */
-            }
-        }
-
-        /* Write Import Strings: DLL Names */
-        for (i = 0; i < num_imports; ++i)
-        {
-            thrive_buffer_write_bytes(out, (u8 *)imports[i].library, thrive_string_length(imports[i].library) + 1);
-        }
-
-        /* Write Import Strings: Function Names */
-        for (i = 0; i < num_imports; ++i)
-        {
-            for (j = 0; j < imports[i].imports_count; ++j)
-            {
-                thrive_buffer_write_u16(out, 0); /* Ordinal Hint */
-                thrive_buffer_write_bytes(out, (u8 *)imports[i].imports[j], thrive_string_length((s8 *)imports[i].imports[j]) + 1);
-            }
-        }
-    }
-
-    thrive_buffer_align(out, 0x200); /* Final File Alignment Pad */
-}
-
-/* #############################################################################
  * # [SECTION] Import Directory
  * #############################################################################
  */
@@ -534,7 +277,7 @@ i32 main(void)
     s8 *k32_funcs[] = {"Sleep", "ExitProcess"};
     s8 *u32_funcs[] = {"MessageBoxA"};
 
-    thrive_import imports[] = {
+    thrive_library_import imports[] = {
         {"kernel32.dll", k32_funcs, 2},
         {"user32.dll", u32_funcs, 1},
     };
@@ -544,9 +287,9 @@ i32 main(void)
     u32 text_vsize = 0x1000;
 
     /* 2. Pre-calculate IAT RVAs dynamically */
-    u32 sleep_rva = get_iat_rva(imports, imports_count, text_vsize, 0, 0);
-    u32 exit_rva = get_iat_rva(imports, imports_count, text_vsize, 0, 1);
-    u32 messagebox_rva = get_iat_rva(imports, imports_count, text_vsize, 1, 0);
+    u32 sleep_rva = thrive_pe32_plus_get_iat_rva(imports, imports_count, text_vsize, 0, 0);
+    u32 exit_rva = thrive_pe32_plus_get_iat_rva(imports, imports_count, text_vsize, 0, 1);
+    u32 messagebox_rva = thrive_pe32_plus_get_iat_rva(imports, imports_count, text_vsize, 1, 0);
 
     /* 3. Machine Code Generation */
     u8 code[256];
@@ -582,7 +325,7 @@ i32 main(void)
     thrive_buffer pe_buf = {0};
     pe_buf.data = pe_data;
 
-    emit_pe32_file(
+    thrive_pe32_plus_generate(
         &pe_buf,
         &codebuf,
         imports,

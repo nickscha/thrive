@@ -482,65 +482,20 @@ THRIVE_API THRIVE_INLINE u32 thrive_string_equals(s8 *a, s8 *b, u32 len)
     return 1;
 }
 
-/* #############################################################################
- * # [SECTION] Buffered Writer
- * #############################################################################
- */
-THRIVE_API THRIVE_INLINE void thrive_buffer_write_u8(thrive_buffer *b, u8 value)
+THRIVE_API THRIVE_INLINE u32 thrive_align_up(u32 val, u32 align)
 {
-    b->data[b->size++] = value;
-}
-
-THRIVE_API THRIVE_INLINE void thrive_buffer_write_u16(thrive_buffer *b, u16 value)
-{
-    thrive_buffer_write_u8(b, (u8)(value & 0xFF));
-    thrive_buffer_write_u8(b, (u8)((value >> 8) & 0xFF));
-}
-
-THRIVE_API THRIVE_INLINE void thrive_buffer_write_u32(thrive_buffer *b, u32 value)
-{
-    thrive_buffer_write_u8(b, (u8)(value & 0xFF));
-    thrive_buffer_write_u8(b, (u8)((value >> 8) & 0xFF));
-    thrive_buffer_write_u8(b, (u8)((value >> 16) & 0xFF));
-    thrive_buffer_write_u8(b, (u8)((value >> 24) & 0xFF));
-}
-
-THRIVE_API THRIVE_INLINE void thrive_buffer_write_u64(thrive_buffer *b, u64 value)
-{
-    thrive_buffer_write_u8(b, (u8)(value & 0xFF));
-    thrive_buffer_write_u8(b, (u8)((value >> 8) & 0xFF));
-    thrive_buffer_write_u8(b, (u8)((value >> 16) & 0xFF));
-    thrive_buffer_write_u8(b, (u8)((value >> 24) & 0xFF));
-    thrive_buffer_write_u8(b, (u8)((value >> 32) & 0xFF));
-    thrive_buffer_write_u8(b, (u8)((value >> 40) & 0xFF));
-    thrive_buffer_write_u8(b, (u8)((value >> 48) & 0xFF));
-    thrive_buffer_write_u8(b, (u8)((value >> 56) & 0xFF));
-}
-
-THRIVE_API THRIVE_INLINE void thrive_buffer_write_bytes(thrive_buffer *b, u8 *data, u32 size)
-{
-    u32 i;
-
-    for (i = 0; i < size; ++i)
+    if (align == 0)
     {
-        thrive_buffer_write_u8(b, data[i]);
+        return val;
     }
-}
 
-THRIVE_API THRIVE_INLINE void thrive_buffer_align(thrive_buffer *b, u32 align)
-{
-    while (b->size % align)
-    {
-        thrive_buffer_write_u8(b, 0);
-    }
+    return (val + align - 1) & ~(align - 1);
 }
 
 /* #############################################################################
  * # [SECTION] Thrive Status
  * #############################################################################
  */
-#define THRIVE_HAS_ERROR(s) ((s)->status.type != THRIVE_STATUS_OK)
-
 THRIVE_API void thrive_panic(thrive_status status);
 
 THRIVE_API void thrive_error(thrive_state *state, thrive_status_type type, s8 *message)
@@ -1950,6 +1905,337 @@ THRIVE_API thrive_ast *thrive_ast_fold(thrive_ast *node)
     default:
         return node;
     }
+}
+
+/* #############################################################################
+ * # [SECTION] Buffered Writer
+ * #############################################################################
+ */
+THRIVE_API THRIVE_INLINE void thrive_buffer_write_u8(thrive_buffer *b, u8 value)
+{
+    b->data[b->size++] = value;
+}
+
+THRIVE_API THRIVE_INLINE void thrive_buffer_write_u16(thrive_buffer *b, u16 value)
+{
+    thrive_buffer_write_u8(b, (u8)(value & 0xFF));
+    thrive_buffer_write_u8(b, (u8)((value >> 8) & 0xFF));
+}
+
+THRIVE_API THRIVE_INLINE void thrive_buffer_write_u32(thrive_buffer *b, u32 value)
+{
+    thrive_buffer_write_u8(b, (u8)(value & 0xFF));
+    thrive_buffer_write_u8(b, (u8)((value >> 8) & 0xFF));
+    thrive_buffer_write_u8(b, (u8)((value >> 16) & 0xFF));
+    thrive_buffer_write_u8(b, (u8)((value >> 24) & 0xFF));
+}
+
+THRIVE_API THRIVE_INLINE void thrive_buffer_write_u64(thrive_buffer *b, u64 value)
+{
+    thrive_buffer_write_u8(b, (u8)(value & 0xFF));
+    thrive_buffer_write_u8(b, (u8)((value >> 8) & 0xFF));
+    thrive_buffer_write_u8(b, (u8)((value >> 16) & 0xFF));
+    thrive_buffer_write_u8(b, (u8)((value >> 24) & 0xFF));
+    thrive_buffer_write_u8(b, (u8)((value >> 32) & 0xFF));
+    thrive_buffer_write_u8(b, (u8)((value >> 40) & 0xFF));
+    thrive_buffer_write_u8(b, (u8)((value >> 48) & 0xFF));
+    thrive_buffer_write_u8(b, (u8)((value >> 56) & 0xFF));
+}
+
+THRIVE_API THRIVE_INLINE void thrive_buffer_write_bytes(thrive_buffer *b, u8 *data, u32 size)
+{
+    u32 i;
+
+    for (i = 0; i < size; ++i)
+    {
+        thrive_buffer_write_u8(b, data[i]);
+    }
+}
+
+THRIVE_API THRIVE_INLINE void thrive_buffer_align(thrive_buffer *b, u32 align)
+{
+    while (b->size % align)
+    {
+        thrive_buffer_write_u8(b, 0);
+    }
+}
+
+/* #############################################################################
+ * # [SECTION] PE32+ Generator
+ * #############################################################################
+ */
+typedef struct thrive_library_import
+{
+    s8 *library;       /* e.g. "kernel32.dll" */
+    s8 **imports;      /* e.g. "ExitProcess", "Sleep" */
+    u32 imports_count; /* count of imports entries */
+
+} thrive_library_import;
+
+u32 thrive_pe32_plus_get_iat_rva(thrive_library_import *imports, u32 num_imports, u32 text_vsize, u32 dll_index, u32 func_index)
+{
+    u32 text_rva = 0x1000;
+    u32 rdata_rva = text_rva + thrive_align_up(text_vsize, 0x1000);
+    u32 idt_size = (num_imports + 1) * 20;
+
+    u32 num_funcs = 0;
+    u32 i;
+
+    u32 ilt_size;
+    u32 iat_base_rva;
+    u32 offset;
+
+    for (i = 0; i < num_imports; ++i)
+    {
+        num_funcs += imports[i].imports_count;
+    }
+
+    ilt_size = (num_funcs + num_imports) * 8;
+    iat_base_rva = rdata_rva + idt_size + ilt_size;
+
+    offset = 0;
+
+    for (i = 0; i < dll_index; ++i)
+    {
+        offset += (imports[i].imports_count + 1) * 8;
+    }
+
+    offset += func_index * 8;
+
+    return iat_base_rva + offset;
+}
+
+THRIVE_API THRIVE_INLINE u32 thrive_pe32_plus_calculate_import_function_count(
+    thrive_library_import *imports,
+    u32 num_imports)
+{
+    u32 result = 0;
+
+    u32 i;
+
+    for (i = 0; i < num_imports; ++i)
+    {
+        result += imports[i].imports_count;
+    }
+
+    return result;
+}
+
+THRIVE_API THRIVE_INLINE u32 thrive_pe32_plus_calculate_import_strings_size(
+    thrive_library_import *imports,
+    u32 num_imports)
+{
+    u32 result = 0;
+
+    u32 i;
+    u32 j;
+
+    for (i = 0; i < num_imports; ++i)
+    {
+        result += thrive_string_length(imports[i].library) + 1;
+
+        for (j = 0; j < imports[i].imports_count; ++j)
+        {
+            result += 2 + thrive_string_length((s8 *)imports[i].imports[j]) + 1; /* 2 bytes for Hint */
+        }
+    }
+
+    return result;
+}
+
+void thrive_pe32_plus_generate(
+    thrive_buffer *out,
+    thrive_buffer *code,
+    thrive_library_import *imports,
+    u32 num_imports,
+    u32 text_vsize)
+{
+    u32 i, j;
+    u32 num_funcs = thrive_pe32_plus_calculate_import_function_count(imports, num_imports);
+    u32 strings_size = thrive_pe32_plus_calculate_import_strings_size(imports, num_imports);
+
+    /* Section Layout Calculations */
+    u32 idt_size = (num_imports + 1) * 20;
+    u32 ilt_size = (num_funcs + num_imports) * 8;
+    u32 iat_size = ilt_size;
+
+    u32 text_rva = 0x1000;
+    u32 text_raw_size = thrive_align_up(code->size, 0x200);
+
+    u32 rdata_rva = text_rva + thrive_align_up(text_vsize, 0x1000);
+    u32 rdata_vsize = idt_size + ilt_size + iat_size + strings_size;
+    u32 rdata_raw_size = thrive_align_up(rdata_vsize, 0x200);
+
+    u32 idt_rva = rdata_rva;
+    u32 ilt_rva = idt_rva + idt_size;
+    u32 iat_rva = ilt_rva + ilt_size;
+    u32 strings_rva = iat_rva + iat_size;
+    u32 size_of_image = thrive_align_up(rdata_rva + rdata_vsize, 0x1000);
+
+    /* Write DOS Header */
+    thrive_buffer_write_u16(out, 0x5A4D); /* MZ */
+    thrive_buffer_align(out, 0x3C);       /* */
+    thrive_buffer_write_u32(out, 0x40);   /* e_lfanew */
+
+    /* Write NT Headers */
+    thrive_buffer_write_u32(out, 0x00004550); /* PE\0\0 */
+    thrive_buffer_write_u16(out, 0x8664);     /* Machine: AMD64 */
+    thrive_buffer_write_u16(out, 2);          /* NumberOfSections */
+    thrive_buffer_write_u32(out, 0);          /* TimeDateStamp */
+    thrive_buffer_write_u32(out, 0);          /* PointerToSymbolTable */
+    thrive_buffer_write_u32(out, 0);          /* NumberOfSymbols */
+    thrive_buffer_write_u16(out, 0xF0);       /* SizeOfOptionalHeader */
+    thrive_buffer_write_u16(out, 0x0022);     /* Characteristics (Exec, LargeAddr) */
+
+    /* Write Optional Header (PE32+) */
+    thrive_buffer_write_u16(out, 0x020B);         /* Magic */
+    thrive_buffer_write_u8(out, 1);               /* MajorLinkerVersion */
+    thrive_buffer_write_u8(out, 0);               /* MinorLinkerVersion */
+    thrive_buffer_write_u32(out, text_raw_size);  /* SizeOfCode */
+    thrive_buffer_write_u32(out, rdata_raw_size); /* SizeOfInitializedData */
+    thrive_buffer_write_u32(out, 0);              /* SizeOfUninitializedData */
+    thrive_buffer_write_u32(out, text_rva);       /* AddressOfEntryPoint */
+    thrive_buffer_write_u32(out, text_rva);       /* BaseOfCode */
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wlong-long"
+    thrive_buffer_write_u64(out, 0x0000000140000000ULL); /* ImageBase */
+#pragma GCC diagnostic pop
+
+    thrive_buffer_write_u32(out, 0x1000);        /* SectionAlignment */
+    thrive_buffer_write_u32(out, 0x200);         /* FileAlignment */
+    thrive_buffer_write_u16(out, 5);             /* */
+    thrive_buffer_write_u16(out, 2);             /* OSMajor / OSMinor */
+    thrive_buffer_write_u16(out, 0);             /* */
+    thrive_buffer_write_u16(out, 0);             /* ImageMajor / ImageMinor */
+    thrive_buffer_write_u16(out, 5);             /* */
+    thrive_buffer_write_u16(out, 2);             /* SubSysMajor / SubSysMinor */
+    thrive_buffer_write_u32(out, 0);             /* Win32VersionValue */
+    thrive_buffer_write_u32(out, size_of_image); /* SizeOfImage */
+    thrive_buffer_write_u32(out, 0x200);         /* SizeOfHeaders */
+    thrive_buffer_write_u32(out, 0);             /* CheckSum */
+    thrive_buffer_write_u16(out, 3);             /* Subsystem (3 = Windows CUI Console, 2 = Windows GUI) */
+    thrive_buffer_write_u16(out, 0x8140);        /* DllCharacteristics (NX, DynBase, HighEnt) */
+    thrive_buffer_write_u64(out, 0x100000);      /* SizeOfStackReserve */
+    thrive_buffer_write_u64(out, 0x1000);        /* SizeOfStackCommit */
+    thrive_buffer_write_u64(out, 0x100000);      /* SizeOfHeapReserve */
+    thrive_buffer_write_u64(out, 0x1000);        /* SizeOfHeapCommit */
+    thrive_buffer_write_u32(out, 0);             /* LoaderFlags */
+    thrive_buffer_write_u32(out, 16);            /* NumberOfRvaAndSizes */
+
+    /* Data Directories */
+    thrive_buffer_write_u32(out, 0);
+    thrive_buffer_write_u32(out, 0); /* Export Directory */
+    thrive_buffer_write_u32(out, idt_rva);
+    thrive_buffer_write_u32(out, idt_size); /* Import Directory */
+
+    for (i = 2; i < 16; ++i)
+    {
+        thrive_buffer_write_u32(out, 0);
+        thrive_buffer_write_u32(out, 0);
+    }
+
+    /* Section Header: .text */
+    thrive_buffer_write_bytes(out, (u8 *)".text\0\0\0", 8);
+    thrive_buffer_write_u32(out, code->size);    /* VirtualSize */
+    thrive_buffer_write_u32(out, text_rva);      /* VirtualAddress */
+    thrive_buffer_write_u32(out, text_raw_size); /* SizeOfRawData */
+    thrive_buffer_write_u32(out, 0x200);         /* PointerToRawData */
+    thrive_buffer_write_u32(out, 0);             /* */
+    thrive_buffer_write_u32(out, 0);             /* */
+    thrive_buffer_write_u16(out, 0);             /* */
+    thrive_buffer_write_u16(out, 0);             /* */
+    thrive_buffer_write_u32(out, 0x60000020);    /* Characteristics (RX) */
+
+    /* Section Header: .rdata */
+    thrive_buffer_write_bytes(out, (u8 *)".rdata\0\0", 8);
+    thrive_buffer_write_u32(out, rdata_vsize);           /* VirtualSize */
+    thrive_buffer_write_u32(out, rdata_rva);             /* VirtualAddress */
+    thrive_buffer_write_u32(out, rdata_raw_size);        /* SizeOfRawData */
+    thrive_buffer_write_u32(out, 0x200 + text_raw_size); /* PointerToRawData */
+    thrive_buffer_write_u32(out, 0);                     /* */
+    thrive_buffer_write_u32(out, 0);                     /* */
+    thrive_buffer_write_u16(out, 0);                     /* */
+    thrive_buffer_write_u16(out, 0);                     /* */
+    thrive_buffer_write_u32(out, 0x40000040);            /* Characteristics (R) */
+
+    thrive_buffer_align(out, 0x200); /* Pad Header to File Alignment */
+
+    /* Write .text Data */
+    thrive_buffer_write_bytes(out, code->data, code->size);
+    thrive_buffer_align(out, 0x200);
+
+    {
+        /* Write .rdata Data (Imports) */
+        u32 current_dll_name_rva = strings_rva;
+        u32 current_func_name_rva = strings_rva;
+        u32 current_ilt_rva = ilt_rva;
+        u32 current_iat_rva = iat_rva;
+
+        for (i = 0; i < num_imports; ++i)
+        {
+            current_func_name_rva += thrive_string_length(imports[i].library) + 1;
+        }
+
+        /* Write Import Descriptor Table (IDT) */
+        for (i = 0; i < num_imports; ++i)
+        {
+            thrive_buffer_write_u32(out, current_ilt_rva);
+            thrive_buffer_write_u32(out, 0);
+            thrive_buffer_write_u32(out, 0);
+            thrive_buffer_write_u32(out, current_dll_name_rva);
+            thrive_buffer_write_u32(out, current_iat_rva);
+
+            current_dll_name_rva += thrive_string_length(imports[i].library) + 1;
+            current_ilt_rva += (imports[i].imports_count + 1) * 8;
+            current_iat_rva += (imports[i].imports_count + 1) * 8;
+        }
+
+        thrive_buffer_write_u32(out, 0);
+        thrive_buffer_write_u32(out, 0);
+        thrive_buffer_write_u32(out, 0);
+        thrive_buffer_write_u32(out, 0);
+        thrive_buffer_write_u32(out, 0);
+
+        /* Write Import Lookup Table (ILT) & Import Address Table (IAT) */
+        {
+            i32 table;
+
+            for (table = 0; table < 2; ++table)
+            {
+                u32 temp_name_rva = current_func_name_rva;
+
+                for (i = 0; i < num_imports; ++i)
+                {
+                    for (j = 0; j < imports[i].imports_count; ++j)
+                    {
+                        thrive_buffer_write_u64(out, temp_name_rva);
+                        temp_name_rva += 2 + thrive_string_length((s8 *)imports[i].imports[j]) + 1;
+                    }
+                    thrive_buffer_write_u64(out, 0); /* Null thunk bounds the array */
+                }
+            }
+
+            /* Write Import Strings: DLL Names */
+            for (i = 0; i < num_imports; ++i)
+            {
+                thrive_buffer_write_bytes(out, (u8 *)imports[i].library, thrive_string_length(imports[i].library) + 1);
+            }
+
+            /* Write Import Strings: Function Names */
+            for (i = 0; i < num_imports; ++i)
+            {
+                for (j = 0; j < imports[i].imports_count; ++j)
+                {
+                    thrive_buffer_write_u16(out, 0); /* Ordinal Hint */
+                    thrive_buffer_write_bytes(out, (u8 *)imports[i].imports[j], thrive_string_length((s8 *)imports[i].imports[j]) + 1);
+                }
+            }
+        }
+    }
+
+    /* Final File Alignment Pad */
+    thrive_buffer_align(out, 0x200);
 }
 
 #endif /* THRIVE_H */
