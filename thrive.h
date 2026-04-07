@@ -85,6 +85,27 @@ LICENSE
 
 #define THRIVE_API static
 
+/* #############################################################################
+ * # [SECTION] 64 bit types
+ * #############################################################################
+ */
+#if __STDC_VERSION__ >= 199901L
+typedef long long i64;
+typedef unsigned long long u64;
+#elif defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wlong-long"
+typedef long long i64;
+typedef unsigned long long u64;
+#pragma GCC diagnostic pop
+#elif defined(_MSC_VER)
+typedef __int64 i64;
+typedef unsigned __int64 u64;
+#else
+typedef long i64;
+typedef unsigned long u64;
+#endif
+
 typedef char s8;
 typedef unsigned char u8;
 typedef unsigned short u16;
@@ -413,6 +434,13 @@ struct thrive_ast
     } data;
 };
 
+typedef struct thrive_buffer
+{
+    u8 *data;
+    u32 size;
+    u32 capacity;
+} thrive_buffer;
+
 /* #############################################################################
  * # [SECTION] Helper Functions
  * #############################################################################
@@ -455,10 +483,62 @@ THRIVE_API THRIVE_INLINE u32 thrive_string_equals(s8 *a, s8 *b, u32 len)
 }
 
 /* #############################################################################
+ * # [SECTION] Buffered Writer
+ * #############################################################################
+ */
+THRIVE_API THRIVE_INLINE void thrive_buffer_write_u8(thrive_buffer *b, u8 value)
+{
+    b->data[b->size++] = value;
+}
+
+THRIVE_API THRIVE_INLINE void thrive_buffer_write_u16(thrive_buffer *b, u16 value)
+{
+    thrive_buffer_write_u8(b, value & 0xFF);
+    thrive_buffer_write_u8(b, (value >> 8) & 0xFF);
+}
+
+THRIVE_API THRIVE_INLINE void thrive_buffer_write_u32(thrive_buffer *b, u32 value)
+{
+    thrive_buffer_write_u8(b, value & 0xFF);
+    thrive_buffer_write_u8(b, (value >> 8) & 0xFF);
+    thrive_buffer_write_u8(b, (value >> 16) & 0xFF);
+    thrive_buffer_write_u8(b, (value >> 24) & 0xFF);
+}
+
+THRIVE_API THRIVE_INLINE void thrive_buffer_write_u64(thrive_buffer *b, u64 value)
+{
+    thrive_buffer_write_u8(b, (u8)(value & 0xFF));
+    thrive_buffer_write_u8(b, (u8)((value >> 8) & 0xFF));
+    thrive_buffer_write_u8(b, (u8)((value >> 16) & 0xFF));
+    thrive_buffer_write_u8(b, (u8)((value >> 24) & 0xFF));
+    thrive_buffer_write_u8(b, (u8)((value >> 32) & 0xFF));
+    thrive_buffer_write_u8(b, (u8)((value >> 40) & 0xFF));
+    thrive_buffer_write_u8(b, (u8)((value >> 48) & 0xFF));
+    thrive_buffer_write_u8(b, (u8)((value >> 56) & 0xFF));
+}
+
+THRIVE_API THRIVE_INLINE void thrive_buffer_write_bytes(thrive_buffer *b, u8 *data, u32 size)
+{
+    u32 i;
+
+    for (i = 0; i < size; ++i)
+    {
+        thrive_buffer_write_u8(b, data[i]);
+    }
+}
+
+THRIVE_API THRIVE_INLINE void thrive_buffer_align(thrive_buffer *b, u32 align)
+{
+    while (b->size % align)
+    {
+        thrive_buffer_write_u8(b, 0);
+    }
+}
+
+/* #############################################################################
  * # [SECTION] Thrive Status
  * #############################################################################
  */
-
 #define THRIVE_HAS_ERROR(s) ((s)->status.type != THRIVE_STATUS_OK)
 
 THRIVE_API void thrive_panic(thrive_status status);

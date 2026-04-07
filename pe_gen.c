@@ -8,91 +8,10 @@ THRIVE_API void thrive_panic(thrive_status status)
 }
 
 /* #############################################################################
- * # [SECTION] 64 bit types
- * #############################################################################
- */
-#if __STDC_VERSION__ >= 199901L
-typedef long long i64;
-typedef unsigned long long u64;
-#elif defined(__GNUC__) || defined(__clang__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wlong-long"
-typedef long long i64;
-typedef unsigned long long u64;
-#pragma GCC diagnostic pop
-#elif defined(_MSC_VER)
-typedef __int64 i64;
-typedef unsigned __int64 u64;
-#else
-typedef long i64;
-typedef unsigned long u64;
-#endif
-
-/* #############################################################################
- * # [SECTION] Byte Emitters
- * #############################################################################
- */
-typedef struct buffer
-{
-    u8 *data;
-    u32 size;
-    u32 capacity;
-} buffer;
-
-void emit_u8(buffer *b, u8 v)
-{
-    b->data[b->size++] = v;
-}
-
-void emit_u16(buffer *b, u16 v)
-{
-    emit_u8(b, v & 0xFF);
-    emit_u8(b, (v >> 8) & 0xFF);
-}
-
-void emit_u32(buffer *b, u32 v)
-{
-    emit_u8(b, v & 0xFF);
-    emit_u8(b, (v >> 8) & 0xFF);
-    emit_u8(b, (v >> 16) & 0xFF);
-    emit_u8(b, (v >> 24) & 0xFF);
-}
-
-void emit_u64(buffer *b, u64 v)
-{
-    emit_u8(b, (u8)(v & 0xFF));
-    emit_u8(b, (u8)((v >> 8) & 0xFF));
-    emit_u8(b, (u8)((v >> 16) & 0xFF));
-    emit_u8(b, (u8)((v >> 24) & 0xFF));
-    emit_u8(b, (u8)((v >> 32) & 0xFF));
-    emit_u8(b, (u8)((v >> 40) & 0xFF));
-    emit_u8(b, (u8)((v >> 48) & 0xFF));
-    emit_u8(b, (u8)((v >> 56) & 0xFF));
-}
-
-void emit_bytes(buffer *b, u8 *data, u32 size)
-{
-    u32 i;
-
-    for (i = 0; i < size; ++i)
-    {
-        emit_u8(b, data[i]);
-    }
-}
-
-void pad_to(buffer *b, u32 align)
-{
-    while (b->size % align)
-    {
-        emit_u8(b, 0);
-    }
-}
-
-/* #############################################################################
  * # [SECTION] x64 Instruction Emitters
  * #############################################################################
  */
-typedef enum
+typedef enum x64_reg
 {
     REG_RAX = 0,
     REG_RCX = 1,
@@ -112,14 +31,31 @@ typedef enum
     REG_R15 = 15
 } x64_reg;
 
-void emit_modrm_reg(buffer *b, x64_reg reg, x64_reg rm)
+typedef enum x64_op_ext
+{
+    OP_EXT_ADD = 0,
+    OP_EXT_SUB = 5,
+    OP_EXT_MOV = 0
+} x64_op_ext;
+
+typedef enum x64_cc
+{
+    CC_E = 4,
+    CC_NE = 5,
+    CC_L = 12,
+    CC_LE = 14,
+    CC_G = 15,
+    CC_GE = 13
+} x64_cc;
+
+void emit_modrm_reg(thrive_buffer *b, x64_reg reg, x64_reg rm)
 {
     /* Mod = 11 (register-direct addressing) */
     u8 modrm = 0xC0 | ((reg & 7) << 3) | (rm & 7);
-    emit_u8(b, modrm);
+    thrive_buffer_write_u8(b, modrm);
 }
 
-void emit_rex(buffer *b, u8 w, x64_reg reg, x64_reg rm)
+void emit_rex(thrive_buffer *b, u8 w, x64_reg reg, x64_reg rm)
 {
     u8 rex = 0x40;
 
@@ -138,208 +74,197 @@ void emit_rex(buffer *b, u8 w, x64_reg reg, x64_reg rm)
         rex |= 0x01; /* B: Extension for 'rm' field */
     }
 
-    emit_u8(b, rex);
+    thrive_buffer_write_u8(b, rex);
 }
 
-#define OP_EXT_ADD 0
-#define OP_EXT_SUB 5
-#define OP_EXT_MOV 0
-
 /* SUB reg, imm8 or ADD reg, imm8 */
-void emit_alu_ri8(buffer *b, u8 op_ext, x64_reg dst, u8 imm)
+void emit_alu_ri8(thrive_buffer *b, x64_op_ext op_ext, x64_reg dst, u8 imm)
 {
     emit_rex(b, 1, 0, dst);
-    emit_u8(b, 0x83);
-    emit_u8(b, 0xC0 | (op_ext << 3) | (dst & 7));
-    emit_u8(b, imm);
+    thrive_buffer_write_u8(b, 0x83);
+    thrive_buffer_write_u8(b, 0xC0 | (op_ext << 3) | (dst & 7));
+    thrive_buffer_write_u8(b, imm);
 }
 
 /* [rbp + disp32] */
-void emit_modrm_disp32(buffer *b, x64_reg reg, x64_reg base, i32 disp)
+void emit_modrm_disp32(thrive_buffer *b, x64_reg reg, x64_reg base, i32 disp)
 {
-    emit_u8(b, 0x80 | ((reg & 7) << 3) | (base & 7)); /* mod=10 */
-    emit_u32(b, disp);
+    thrive_buffer_write_u8(b, 0x80 | ((reg & 7) << 3) | (base & 7)); /* mod=10 */
+    thrive_buffer_write_u32(b, disp);
 }
 
 /* MOV reg, imm32 */
-void emit_mov_ri32(buffer *b, x64_reg dst, u32 imm)
+void emit_mov_ri32(thrive_buffer *b, x64_reg dst, u32 imm)
 {
     emit_rex(b, 1, 0, dst);
-    emit_u8(b, 0xC7);
-    emit_u8(b, 0xC0 | (OP_EXT_MOV << 3) | (dst & 7));
-    emit_u32(b, imm);
+    thrive_buffer_write_u8(b, 0xC7);
+    thrive_buffer_write_u8(b, 0xC0 | (OP_EXT_MOV << 3) | (dst & 7));
+    thrive_buffer_write_u32(b, imm);
 }
 
 /* MOV reg, imm64 */
-void emit_mov_ri64(buffer *b, x64_reg dst, u64 imm)
+void emit_mov_ri64(thrive_buffer *b, x64_reg dst, u64 imm)
 {
     emit_rex(b, 1, 0, dst);
-    emit_u8(b, 0xB8 | (dst & 7));
-    emit_u64(b, imm);
+    thrive_buffer_write_u8(b, 0xB8 | (dst & 7));
+    thrive_buffer_write_u64(b, imm);
 }
 
 /* mov r64, [rbp+disp] */
-void emit_mov_r_mrbp(buffer *b, x64_reg dst, i32 disp)
+void emit_mov_r_mrbp(thrive_buffer *b, x64_reg dst, i32 disp)
 {
     emit_rex(b, 1, dst, REG_RBP);
-    emit_u8(b, 0x8B);
+    thrive_buffer_write_u8(b, 0x8B);
     emit_modrm_disp32(b, dst, REG_RBP, disp);
 }
 
 /* mov [rbp+disp], r64 */
-void emit_mov_mrbp_r(buffer *b, i32 disp, x64_reg src)
+void emit_mov_mrbp_r(thrive_buffer *b, i32 disp, x64_reg src)
 {
     emit_rex(b, 1, src, REG_RBP);
-    emit_u8(b, 0x89);
+    thrive_buffer_write_u8(b, 0x89);
     emit_modrm_disp32(b, src, REG_RBP, disp);
 }
 
 /* lea r64, [rbp+disp] */
-void emit_lea_r_mrbp(buffer *b, x64_reg dst, i32 disp)
+void emit_lea_r_mrbp(thrive_buffer *b, x64_reg dst, i32 disp)
 {
     emit_rex(b, 1, dst, REG_RBP);
-    emit_u8(b, 0x8D);
+    thrive_buffer_write_u8(b, 0x8D);
     emit_modrm_disp32(b, dst, REG_RBP, disp);
 }
 
 /* MOV reg, reg */
-void emit_mov_rr(buffer *b, x64_reg dst, x64_reg src)
+void emit_mov_rr(thrive_buffer *b, x64_reg dst, x64_reg src)
 {
     emit_rex(b, 1, dst, src);
-    emit_u8(b, 0x8B);
+    thrive_buffer_write_u8(b, 0x8B);
     emit_modrm_reg(b, dst, src);
 }
 
 /* mov rax, [rax] */
-void emit_mov_r_mr(buffer *b, x64_reg dst, x64_reg base)
+void emit_mov_r_mr(thrive_buffer *b, x64_reg dst, x64_reg base)
 {
     emit_rex(b, 1, dst, base);
-    emit_u8(b, 0x8B);
+    thrive_buffer_write_u8(b, 0x8B);
     emit_modrm_reg(b, dst, base);
 }
 
 /* mov [rax], rbx */
-void emit_mov_mr_r(buffer *b, x64_reg base, x64_reg src)
+void emit_mov_mr_r(thrive_buffer *b, x64_reg base, x64_reg src)
 {
     emit_rex(b, 1, src, base);
-    emit_u8(b, 0x89);
+    thrive_buffer_write_u8(b, 0x89);
     emit_modrm_reg(b, src, base);
 }
 
 /* movzx rax, al */
-void emit_movzx_rax_al(buffer *b)
+void emit_movzx_rax_al(thrive_buffer *b)
 {
-    emit_u8(b, 0x48);
-    emit_u8(b, 0x0F);
-    emit_u8(b, 0xB6);
-    emit_u8(b, 0xC0);
+    thrive_buffer_write_u8(b, 0x48);
+    thrive_buffer_write_u8(b, 0x0F);
+    thrive_buffer_write_u8(b, 0xB6);
+    thrive_buffer_write_u8(b, 0xC0);
 }
 
 /* PUSH reg */
-void emit_push_r(buffer *b, x64_reg reg)
+void emit_push_r(thrive_buffer *b, x64_reg reg)
 {
     if (reg >= 8)
     {
-        emit_u8(b, 0x41); /* REX.B for high registers */
+        thrive_buffer_write_u8(b, 0x41); /* REX.B for high registers */
     }
-    emit_u8(b, 0x50 | (reg & 7));
+    thrive_buffer_write_u8(b, 0x50 | (reg & 7));
 }
 
 /* POP reg */
-void emit_pop_r(buffer *b, x64_reg reg)
+void emit_pop_r(thrive_buffer *b, x64_reg reg)
 {
     if (reg >= 8)
     {
-        emit_u8(b, 0x41);
+        thrive_buffer_write_u8(b, 0x41);
     }
-    emit_u8(b, 0x58 | (reg & 7));
+    thrive_buffer_write_u8(b, 0x58 | (reg & 7));
 }
 
 /* XOR reg, reg */
-void emit_xor_rr(buffer *b, x64_reg dst, x64_reg src)
+void emit_xor_rr(thrive_buffer *b, x64_reg dst, x64_reg src)
 {
     emit_rex(b, 1, src, dst);
-    emit_u8(b, 0x31);
+    thrive_buffer_write_u8(b, 0x31);
     emit_modrm_reg(b, src, dst);
 }
 
 /* add r64, r64 */
-void emit_add_rr(buffer *b, x64_reg dst, x64_reg src)
+void emit_add_rr(thrive_buffer *b, x64_reg dst, x64_reg src)
 {
     emit_rex(b, 1, src, dst);
-    emit_u8(b, 0x01);
+    thrive_buffer_write_u8(b, 0x01);
     emit_modrm_reg(b, src, dst);
 }
 
 /* sub r64, r64 */
-void emit_sub_rr(buffer *b, x64_reg dst, x64_reg src)
+void emit_sub_rr(thrive_buffer *b, x64_reg dst, x64_reg src)
 {
     emit_rex(b, 1, src, dst);
-    emit_u8(b, 0x29);
+    thrive_buffer_write_u8(b, 0x29);
     emit_modrm_reg(b, src, dst);
 }
 
 /* imul r64, r64 */
-void emit_imul_rr(buffer *b, x64_reg dst, x64_reg src)
+void emit_imul_rr(thrive_buffer *b, x64_reg dst, x64_reg src)
 {
     emit_rex(b, 1, dst, src);
-    emit_u8(b, 0x0F);
-    emit_u8(b, 0xAF);
+    thrive_buffer_write_u8(b, 0x0F);
+    thrive_buffer_write_u8(b, 0xAF);
     emit_modrm_reg(b, dst, src);
 }
 
 /* cmp r64, r64 */
-void emit_cmp_rr(buffer *b, x64_reg a, x64_reg rb)
+void emit_cmp_rr(thrive_buffer *b, x64_reg a, x64_reg rb)
 {
     emit_rex(b, 1, rb, a);
-    emit_u8(b, 0x39);
+    thrive_buffer_write_u8(b, 0x39);
     emit_modrm_reg(b, rb, a);
 }
 
 /* setcc */
-#define CC_E 4
-#define CC_NE 5
-#define CC_L 12
-#define CC_LE 14
-#define CC_G 15
-#define CC_GE 13
-
-void emit_setcc(buffer *b, u8 cc)
+void emit_setcc(thrive_buffer *b, x64_cc cc)
 {
-    emit_u8(b, 0x0F);
-    emit_u8(b, 0x90 | cc); /* cc = condition */
-    emit_u8(b, 0xC0);      /* AL */
+    thrive_buffer_write_u8(b, 0x0F);
+    thrive_buffer_write_u8(b, 0x90 | cc); /* cc = condition */
+    thrive_buffer_write_u8(b, 0xC0);      /* AL */
 }
 
 /* jmp rel32 */
-void emit_jmp(buffer *b, i32 rel)
+void emit_jmp(thrive_buffer *b, i32 rel)
 {
-    emit_u8(b, 0xE9);
-    emit_u32(b, rel);
+    thrive_buffer_write_u8(b, 0xE9);
+    thrive_buffer_write_u32(b, rel);
 }
 
 /* je / jne / etc */
-void emit_jcc(buffer *b, u8 cc, i32 rel)
+void emit_jcc(thrive_buffer *b, x64_cc cc, i32 rel)
 {
-    emit_u8(b, 0x0F);
-    emit_u8(b, 0x80 | cc);
-    emit_u32(b, rel);
+    thrive_buffer_write_u8(b, 0x0F);
+    thrive_buffer_write_u8(b, 0x80 | cc);
+    thrive_buffer_write_u32(b, rel);
 }
 
 /* direct call */
-void emit_call_rel32(buffer *b, u32 curr_rva, u32 target_rva)
+void emit_call_rel32(thrive_buffer *b, u32 curr_rva, u32 target_rva)
 {
     u32 rel = target_rva - (curr_rva + 5);
-    emit_u8(b, 0xE8);
-    emit_u32(b, rel);
+    thrive_buffer_write_u8(b, 0xE8);
+    thrive_buffer_write_u32(b, rel);
 }
 
-void emit_inst_call_rel32(buffer *b, u32 curr_rva, u32 target_rva)
+void emit_inst_call_rel32(thrive_buffer *b, u32 curr_rva, u32 target_rva)
 {
     u32 rel = target_rva - (curr_rva + 6);
-    emit_u8(b, 0xFF); /* CALL */
-    emit_u8(b, 0x15); /* ModR/M: rel32 */
-    emit_u32(b, rel);
+    thrive_buffer_write_u8(b, 0xFF); /* CALL */
+    thrive_buffer_write_u8(b, 0x15); /* ModR/M: rel32 */
+    thrive_buffer_write_u32(b, rel);
 }
 
 /* #############################################################################
@@ -401,8 +326,8 @@ u32 get_iat_rva(thrive_import *imports, u32 num_imports, u32 text_vsize, u32 dll
  */
 
 void emit_pe32_file(
-    buffer *out,
-    buffer *code,
+    thrive_buffer *out,
+    thrive_buffer *code,
     thrive_import *imports,
     u32 num_imports,
     u32 text_vsize)
@@ -438,99 +363,101 @@ void emit_pe32_file(
     u32 ilt_rva = idt_rva + idt_size;
     u32 iat_rva = ilt_rva + ilt_size;
     u32 strings_rva = iat_rva + iat_size;
+    u32 size_of_image = align_up(rdata_rva + rdata_vsize, 0x1000);
 
     /* Write DOS Header */
-    emit_u16(out, 0x5A4D); /* MZ */
-    pad_to(out, 0x3C);
-    emit_u32(out, 0x40); /* e_lfanew */
+    thrive_buffer_write_u16(out, 0x5A4D); /* MZ */
+    thrive_buffer_align(out, 0x3C);       /* */
+    thrive_buffer_write_u32(out, 0x40);   /* e_lfanew */
 
     /* Write NT Headers */
-    emit_u32(out, 0x00004550); /* PE\0\0 */
-    emit_u16(out, 0x8664);     /* Machine: AMD64 */
-    emit_u16(out, 2);          /* NumberOfSections */
-    emit_u32(out, 0);          /* TimeDateStamp */
-    emit_u32(out, 0);          /* PointerToSymbolTable */
-    emit_u32(out, 0);          /* NumberOfSymbols */
-    emit_u16(out, 0xF0);       /* SizeOfOptionalHeader */
-    emit_u16(out, 0x0022);     /* Characteristics (Exec, LargeAddr) */
+    thrive_buffer_write_u32(out, 0x00004550); /* PE\0\0 */
+    thrive_buffer_write_u16(out, 0x8664);     /* Machine: AMD64 */
+    thrive_buffer_write_u16(out, 2);          /* NumberOfSections */
+    thrive_buffer_write_u32(out, 0);          /* TimeDateStamp */
+    thrive_buffer_write_u32(out, 0);          /* PointerToSymbolTable */
+    thrive_buffer_write_u32(out, 0);          /* NumberOfSymbols */
+    thrive_buffer_write_u16(out, 0xF0);       /* SizeOfOptionalHeader */
+    thrive_buffer_write_u16(out, 0x0022);     /* Characteristics (Exec, LargeAddr) */
 
     /* Write Optional Header (PE32+) */
-    emit_u16(out, 0x020B);                /* Magic */
-    emit_u8(out, 1);                      /* MajorLinkerVersion */
-    emit_u8(out, 0);                      /* MinorLinkerVersion */
-    emit_u32(out, text_raw_size);         /* SizeOfCode */
-    emit_u32(out, rdata_raw_size);        /* SizeOfInitializedData */
-    emit_u32(out, 0);                     /* SizeOfUninitializedData */
-    emit_u32(out, text_rva);              /* AddressOfEntryPoint */
-    emit_u32(out, text_rva);              /* BaseOfCode */
-    emit_u64(out, 0x0000000140000000ULL); /* ImageBase */
-    emit_u32(out, 0x1000);                /* SectionAlignment */
-    emit_u32(out, 0x200);                 /* FileAlignment */
-    emit_u16(out, 5);
-    emit_u16(out, 2); /* OSMajor / OSMinor */
-    emit_u16(out, 0);
-    emit_u16(out, 0); /* ImageMajor / ImageMinor */
-    emit_u16(out, 5);
-    emit_u16(out, 2);                                         /* SubSysMajor / SubSysMinor */
-    emit_u32(out, 0);                                         /* Win32VersionValue */
-    emit_u32(out, align_up(rdata_rva + rdata_vsize, 0x1000)); /* SizeOfImage */
-    emit_u32(out, 0x200);                                     /* SizeOfHeaders */
-    emit_u32(out, 0);                                         /* CheckSum */
-    emit_u16(out, 3);                                         /* Subsystem (3 = Windows CUI Console) */
-    emit_u16(out, 0x8140);                                    /* DllCharacteristics (NX, DynBase, HighEnt) */
-    emit_u64(out, 0x100000);                                  /* SizeOfStackReserve */
-    emit_u64(out, 0x1000);                                    /* SizeOfStackCommit */
-    emit_u64(out, 0x100000);                                  /* SizeOfHeapReserve */
-    emit_u64(out, 0x1000);                                    /* SizeOfHeapCommit */
-    emit_u32(out, 0);                                         /* LoaderFlags */
-    emit_u32(out, 16);                                        /* NumberOfRvaAndSizes */
+    thrive_buffer_write_u16(out, 0x020B);                /* Magic */
+    thrive_buffer_write_u8(out, 1);                      /* MajorLinkerVersion */
+    thrive_buffer_write_u8(out, 0);                      /* MinorLinkerVersion */
+    thrive_buffer_write_u32(out, text_raw_size);         /* SizeOfCode */
+    thrive_buffer_write_u32(out, rdata_raw_size);        /* SizeOfInitializedData */
+    thrive_buffer_write_u32(out, 0);                     /* SizeOfUninitializedData */
+    thrive_buffer_write_u32(out, text_rva);              /* AddressOfEntryPoint */
+    thrive_buffer_write_u32(out, text_rva);              /* BaseOfCode */
+    thrive_buffer_write_u64(out, 0x0000000140000000ULL); /* ImageBase */
+    thrive_buffer_write_u32(out, 0x1000);                /* SectionAlignment */
+    thrive_buffer_write_u32(out, 0x200);                 /* FileAlignment */
+    thrive_buffer_write_u16(out, 5);                     /* */
+    thrive_buffer_write_u16(out, 2);                     /* OSMajor / OSMinor */
+    thrive_buffer_write_u16(out, 0);                     /* */
+    thrive_buffer_write_u16(out, 0);                     /* ImageMajor / ImageMinor */
+    thrive_buffer_write_u16(out, 5);                     /* */
+    thrive_buffer_write_u16(out, 2);                     /* SubSysMajor / SubSysMinor */
+    thrive_buffer_write_u32(out, 0);                     /* Win32VersionValue */
+    thrive_buffer_write_u32(out, size_of_image);         /* SizeOfImage */
+    thrive_buffer_write_u32(out, 0x200);                 /* SizeOfHeaders */
+    thrive_buffer_write_u32(out, 0);                     /* CheckSum */
+    thrive_buffer_write_u16(out, 3);                     /* Subsystem (3 = Windows CUI Console) */
+    thrive_buffer_write_u16(out, 0x8140);                /* DllCharacteristics (NX, DynBase, HighEnt) */
+    thrive_buffer_write_u64(out, 0x100000);              /* SizeOfStackReserve */
+    thrive_buffer_write_u64(out, 0x1000);                /* SizeOfStackCommit */
+    thrive_buffer_write_u64(out, 0x100000);              /* SizeOfHeapReserve */
+    thrive_buffer_write_u64(out, 0x1000);                /* SizeOfHeapCommit */
+    thrive_buffer_write_u32(out, 0);                     /* LoaderFlags */
+    thrive_buffer_write_u32(out, 16);                    /* NumberOfRvaAndSizes */
 
     /* Data Directories */
-    emit_u32(out, 0);
-    emit_u32(out, 0); /* Export Directory */
-    emit_u32(out, idt_rva);
-    emit_u32(out, idt_size); /* Import Directory */
+    thrive_buffer_write_u32(out, 0);
+    thrive_buffer_write_u32(out, 0); /* Export Directory */
+    thrive_buffer_write_u32(out, idt_rva);
+    thrive_buffer_write_u32(out, idt_size); /* Import Directory */
 
     for (i = 2; i < 16; ++i)
     {
-        emit_u32(out, 0);
-        emit_u32(out, 0);
+        thrive_buffer_write_u32(out, 0);
+        thrive_buffer_write_u32(out, 0);
     }
 
     /* Section Header: .text */
-    emit_bytes(out, (u8 *)".text\0\0\0", 8);
-    emit_u32(out, code->size);    /* VirtualSize */
-    emit_u32(out, text_rva);      /* VirtualAddress */
-    emit_u32(out, text_raw_size); /* SizeOfRawData */
-    emit_u32(out, 0x200);         /* PointerToRawData */
-    emit_u32(out, 0);
-    emit_u32(out, 0);
-    emit_u16(out, 0);
-    emit_u16(out, 0);
-    emit_u32(out, 0x60000020); /* Characteristics (RX) */
+    thrive_buffer_write_bytes(out, (u8 *)".text\0\0\0", 8);
+    thrive_buffer_write_u32(out, code->size);    /* VirtualSize */
+    thrive_buffer_write_u32(out, text_rva);      /* VirtualAddress */
+    thrive_buffer_write_u32(out, text_raw_size); /* SizeOfRawData */
+    thrive_buffer_write_u32(out, 0x200);         /* PointerToRawData */
+    thrive_buffer_write_u32(out, 0);             /* */
+    thrive_buffer_write_u32(out, 0);             /* */
+    thrive_buffer_write_u16(out, 0);             /* */
+    thrive_buffer_write_u16(out, 0);             /* */
+    thrive_buffer_write_u32(out, 0x60000020);    /* Characteristics (RX) */
 
     /* Section Header: .rdata */
-    emit_bytes(out, (u8 *)".rdata\0\0", 8);
-    emit_u32(out, rdata_vsize);           /* VirtualSize */
-    emit_u32(out, rdata_rva);             /* VirtualAddress */
-    emit_u32(out, rdata_raw_size);        /* SizeOfRawData */
-    emit_u32(out, 0x200 + text_raw_size); /* PointerToRawData */
-    emit_u32(out, 0);
-    emit_u32(out, 0);
-    emit_u16(out, 0);
-    emit_u16(out, 0);
-    emit_u32(out, 0x40000040); /* Characteristics (R) */
+    thrive_buffer_write_bytes(out, (u8 *)".rdata\0\0", 8);
+    thrive_buffer_write_u32(out, rdata_vsize);           /* VirtualSize */
+    thrive_buffer_write_u32(out, rdata_rva);             /* VirtualAddress */
+    thrive_buffer_write_u32(out, rdata_raw_size);        /* SizeOfRawData */
+    thrive_buffer_write_u32(out, 0x200 + text_raw_size); /* PointerToRawData */
+    thrive_buffer_write_u32(out, 0);                     /* */
+    thrive_buffer_write_u32(out, 0);                     /* */
+    thrive_buffer_write_u16(out, 0);                     /* */
+    thrive_buffer_write_u16(out, 0);                     /* */
+    thrive_buffer_write_u32(out, 0x40000040);            /* Characteristics (R) */
 
-    pad_to(out, 0x200); /* Pad Header to File Alignment */
+    thrive_buffer_align(out, 0x200); /* Pad Header to File Alignment */
 
     /* Write .text Data */
-    emit_bytes(out, code->data, code->size);
-    pad_to(out, 0x200);
+    thrive_buffer_write_bytes(out, code->data, code->size);
+    thrive_buffer_align(out, 0x200);
 
     /* Write .rdata Data (Imports) */
     u32 current_dll_name_rva = strings_rva;
     u32 current_func_name_rva = strings_rva;
-    for (i = 0; i < num_imports; i++)
+
+    for (i = 0; i < num_imports; ++i)
     {
         current_func_name_rva += thrive_string_length(imports[i].library) + 1;
     }
@@ -541,63 +468,67 @@ void emit_pe32_file(
     /* Write Import Descriptor Table (IDT) */
     for (i = 0; i < num_imports; ++i)
     {
-        emit_u32(out, current_ilt_rva);
-        emit_u32(out, 0);
-        emit_u32(out, 0);
-        emit_u32(out, current_dll_name_rva);
-        emit_u32(out, current_iat_rva);
+        thrive_buffer_write_u32(out, current_ilt_rva);
+        thrive_buffer_write_u32(out, 0);
+        thrive_buffer_write_u32(out, 0);
+        thrive_buffer_write_u32(out, current_dll_name_rva);
+        thrive_buffer_write_u32(out, current_iat_rva);
 
         current_dll_name_rva += thrive_string_length(imports[i].library) + 1;
         current_ilt_rva += (imports[i].imports_count + 1) * 8;
         current_iat_rva += (imports[i].imports_count + 1) * 8;
     }
 
-    emit_u32(out, 0);
-    emit_u32(out, 0);
-    emit_u32(out, 0);
-    emit_u32(out, 0);
-    emit_u32(out, 0);
+    thrive_buffer_write_u32(out, 0);
+    thrive_buffer_write_u32(out, 0);
+    thrive_buffer_write_u32(out, 0);
+    thrive_buffer_write_u32(out, 0);
+    thrive_buffer_write_u32(out, 0);
 
     /* Write Import Lookup Table (ILT) & Import Address Table (IAT) */
-    i32 table;
-    for (table = 0; table < 2; ++table)
     {
-        u32 temp_name_rva = current_func_name_rva;
+        i32 table;
+
+        for (table = 0; table < 2; ++table)
+        {
+            u32 temp_name_rva = current_func_name_rva;
+
+            for (i = 0; i < num_imports; ++i)
+            {
+                for (j = 0; j < imports[i].imports_count; ++j)
+                {
+                    thrive_buffer_write_u64(out, temp_name_rva);
+                    temp_name_rva += 2 + thrive_string_length((s8 *)imports[i].imports[j]) + 1;
+                }
+                thrive_buffer_write_u64(out, 0); /* Null thunk bounds the array */
+            }
+        }
+
+        /* Write Import Strings: DLL Names */
+        for (i = 0; i < num_imports; ++i)
+        {
+            thrive_buffer_write_bytes(out, (u8 *)imports[i].library, thrive_string_length(imports[i].library) + 1);
+        }
+
+        /* Write Import Strings: Function Names */
         for (i = 0; i < num_imports; ++i)
         {
             for (j = 0; j < imports[i].imports_count; ++j)
             {
-                emit_u64(out, temp_name_rva);
-                temp_name_rva += 2 + thrive_string_length((s8 *)imports[i].imports[j]) + 1;
+                thrive_buffer_write_u16(out, 0); /* Ordinal Hint */
+                thrive_buffer_write_bytes(out, (u8 *)imports[i].imports[j], thrive_string_length((s8 *)imports[i].imports[j]) + 1);
             }
-            emit_u64(out, 0); /* Null thunk bounds the array */
         }
     }
 
-    /* Write Import Strings: DLL Names */
-    for (i = 0; i < num_imports; ++i)
-    {
-        emit_bytes(out, (u8 *)imports[i].library, thrive_string_length(imports[i].library) + 1);
-    }
-    /* Write Import Strings: Function Names */
-    for (i = 0; i < num_imports; ++i)
-    {
-        for (j = 0; j < imports[i].imports_count; ++j)
-        {
-            emit_u16(out, 0); /* Ordinal Hint */
-            emit_bytes(out, (u8 *)imports[i].imports[j], thrive_string_length((s8 *)imports[i].imports[j]) + 1);
-        }
-    }
-
-    pad_to(out, 0x200); /* Final File Alignment Pad */
+    thrive_buffer_align(out, 0x200); /* Final File Alignment Pad */
 }
 
 /* #############################################################################
  * # [SECTION] Import Directory
  * #############################################################################
  */
-
-int main(void)
+i32 main(void)
 {
     /* 1. Define Imports */
     s8 *k32_funcs[] = {"Sleep", "ExitProcess"};
@@ -619,33 +550,25 @@ int main(void)
 
     /* 3. Machine Code Generation */
     u8 code[256];
-    buffer codebuf = {0};
+    thrive_buffer codebuf = {0};
     codebuf.data = code;
 
     {
         /* --- Call 1: Sleep(2000) --- */
-        /* Allocate 32 bytes shadow space + 8 bytes to align stack to 16 bytes */
         emit_alu_ri8(&codebuf, OP_EXT_SUB, REG_RSP, 40);
         emit_mov_ri32(&codebuf, REG_RCX, 2000);
         emit_inst_call_rel32(&codebuf, 0x1000 + codebuf.size, sleep_rva);
         emit_alu_ri8(&codebuf, OP_EXT_ADD, REG_RSP, 40);
 
         /* --- Call 2: MessageBoxA(0, "Thrive", "Thrive", 0) --- */
-        /* "Thrive\0\0" represented as a Little Endian 64-bit integer */
-        emit_mov_ri64(&codebuf, REG_RAX, 0x0000657669726854ULL);
+        emit_mov_ri64(&codebuf, REG_RAX, 0x0000657669726854ULL); /* "Thrive\0\0" LE */
         emit_push_r(&codebuf, REG_RAX);
-
-        /* Set up string pointers from the stack pointer */
         emit_mov_rr(&codebuf, REG_RDX, REG_RSP); /* lpText */
         emit_mov_rr(&codebuf, REG_R8, REG_RSP);  /* lpCaption */
         emit_xor_rr(&codebuf, REG_RCX, REG_RCX); /* hWnd = 0 */
         emit_xor_rr(&codebuf, REG_R9, REG_R9);   /* uType = MB_OK (0) */
-
-        /* Allocate the 32-byte shadow space for the call */
         emit_alu_ri8(&codebuf, OP_EXT_SUB, REG_RSP, 32);
         emit_inst_call_rel32(&codebuf, 0x1000 + codebuf.size, messagebox_rva);
-
-        /* Cleanup: 32 bytes shadow space + 8 bytes pushed string */
         emit_alu_ri8(&codebuf, OP_EXT_ADD, REG_RSP, 40);
 
         /* --- Call 3: ExitProcess(0) --- */
@@ -656,10 +579,9 @@ int main(void)
 
     /* 4. Emit PE File */
     u8 pe_data[8192];
-    buffer pe_buf = {0};
+    thrive_buffer pe_buf = {0};
     pe_buf.data = pe_data;
 
-    /* FIX: Passed 2 as the num_imports argument! */
     emit_pe32_file(
         &pe_buf,
         &codebuf,
