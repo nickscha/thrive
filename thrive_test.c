@@ -1331,14 +1331,14 @@ int main(void)
         /* Codegen */
         printf("--------------------\n");
         {
-            u8 nasm_data[8192 * 2];
+            u8 nasm_data[8192];
             thrive_buffer asm_buffer = {0};
             asm_buffer.data = nasm_data;
-            asm_buffer.capacity = 8192 * 2;
+            asm_buffer.capacity = 8192;
 
             gen_program(&asm_buffer, ast);
 
-            printf("%s\n", nasm_data);
+            printf("%.*s", asm_buffer.size, asm_buffer.data);
         }
 
         printf("\n");

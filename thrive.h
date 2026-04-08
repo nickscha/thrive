@@ -1951,6 +1951,15 @@ THRIVE_API thrive_ast *thrive_ast_fold(thrive_ast *node)
  */
 THRIVE_API THRIVE_INLINE void thrive_buffer_write_u8(thrive_buffer *b, u8 value)
 {
+    if (b->size >= b->capacity)
+    {
+        thrive_status status = {0};
+        status.type = THRIVE_STATUS_ERROR_MEMORY;
+        status.message = "Buffer memory overflow!";
+
+        thrive_panic(status);
+    }
+
     b->data[b->size++] = value;
 }
 
