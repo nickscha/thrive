@@ -442,6 +442,14 @@ typedef struct thrive_buffer
 
 } thrive_buffer;
 
+typedef struct thrive_p32_plus_import
+{
+    s8 *library;       /* e.g. "kernel32.dll" */
+    s8 **imports;      /* e.g. "ExitProcess", "Sleep" */
+    u32 imports_count; /* count of imports entries */
+
+} thrive_p32_plus_import;
+
 typedef enum thrive_x64_reg
 {
     REG_RAX = 0,
@@ -2053,14 +2061,6 @@ THRIVE_API THRIVE_INLINE void thrive_buffer_align(thrive_buffer *b, u32 align)
  * # [SECTION] PE32+ Generator
  * #############################################################################
  */
-typedef struct thrive_p32_plus_import
-{
-    s8 *library;       /* e.g. "kernel32.dll" */
-    s8 **imports;      /* e.g. "ExitProcess", "Sleep" */
-    u32 imports_count; /* count of imports entries */
-
-} thrive_p32_plus_import;
-
 u32 thrive_pe32_plus_get_iat_rva(thrive_p32_plus_import *imports, u32 num_imports, u32 text_vsize, u32 dll_index, u32 func_index)
 {
     u32 text_rva = 0x1000;
