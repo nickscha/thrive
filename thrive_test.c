@@ -1338,7 +1338,17 @@ int main(void)
 
             gen_program(&asm_buffer, ast);
 
-            printf("%.*s", asm_buffer.size, asm_buffer.data);
+            /*printf("%.*s", asm_buffer.size, asm_buffer.data); */
+
+            /* Output */
+            FILE *f = fopen("test.asm", "wb");
+
+            if (f)
+            {
+                fwrite(asm_buffer.data, 1, asm_buffer.size, f);
+                fclose(f);
+                printf("[thrive] generated: test.asm (%u bytes).\n", asm_buffer.size);
+            }
         }
 
         printf("\n");
