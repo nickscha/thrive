@@ -1990,6 +1990,48 @@ THRIVE_API THRIVE_INLINE void thrive_buffer_write_bytes(thrive_buffer *b, u8 *da
     }
 }
 
+THRIVE_API THRIVE_INLINE void thrive_buffer_write_string(thrive_buffer *b, s8 *str)
+{
+    thrive_buffer_write_bytes(b, (u8 *)str, thrive_string_length(str));
+}
+
+THRIVE_API THRIVE_INLINE void thrive_buffer_write_string_length(thrive_buffer *b, u32 len, s8 *str)
+{
+    thrive_buffer_write_bytes(b, (u8 *)str, len);
+}
+
+THRIVE_API THRIVE_INLINE void thrive_buffer_write_i32(thrive_buffer *b, i32 val)
+{
+    s8 buf[12];
+    i32 i = 11;
+    u32 uval;
+
+    buf[i] = '\0';
+    if (val == 0)
+    {
+        thrive_buffer_write_u8(b, '0');
+        return;
+    }
+
+    if (val < 0)
+    {
+        thrive_buffer_write_u8(b, '-');
+        uval = (u32)-val;
+    }
+    else
+    {
+        uval = (u32)val;
+    }
+
+    while (uval > 0)
+    {
+        buf[--i] = (s8)((uval % 10) + '0');
+        uval /= 10;
+    }
+
+    thrive_buffer_write_string(b, &buf[i]);
+}
+
 THRIVE_API THRIVE_INLINE void thrive_buffer_align(thrive_buffer *b, u32 align)
 {
     while (b->size % align)

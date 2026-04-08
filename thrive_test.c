@@ -76,14 +76,16 @@ thrive_var *add_var(s8 *start, u32 length, u8 is_array, u32 array_size)
     return v;
 }
 
-void gen_expr(thrive_ast *node);
+void gen_expr(thrive_buffer *b, thrive_ast *node);
 
-void gen_expr(thrive_ast *node)
+void gen_expr(thrive_buffer *b, thrive_ast *node)
 {
     switch (node->kind)
     {
     case THRIVE_AST_INT:
-        printf("    mov rax, %u\n", node->data.int_value);
+        thrive_buffer_write_string(b, "    mov rax, ");
+        thrive_buffer_write_i32(b, (i32)node->data.int_value);
+        thrive_buffer_write_u8(b, '\n');
         break;
     case THRIVE_AST_NAME:
     {
@@ -91,97 +93,107 @@ void gen_expr(thrive_ast *node)
 
         if (v->is_array)
         {
-            printf("    lea rax, [rbp%d]\n", v->offset);
+            thrive_buffer_write_string(b, "    lea rax, [rbp");
         }
         else
         {
-            printf("    mov rax, [rbp%d]\n", v->offset);
+            thrive_buffer_write_string(b, "    mov rax, [rbp");
         }
+
+        thrive_buffer_write_i32(b, v->offset);
+        thrive_buffer_write_string(b, "]\n");
+
         break;
     }
     case THRIVE_AST_ARRAY_ACCESS:
     {
-        gen_expr(node->data.array_access.index);
-        printf("    imul rax, 8\n"); /* TODO: multiply index by slot size (8) */
-        printf("    push rax\n");
-        gen_expr(node->data.array_access.left); /* evaluate array pointer/name */
-        printf("    pop rbx\n");                /* pop offset */
-        printf("    add rax, rbx\n");           /* add offset to base pointer */
-        printf("    mov rax, [rax]\n");         /* dereference */
+        gen_expr(b, node->data.array_access.index);
+
+        thrive_buffer_write_string(b, "    imul rax, 8\n"); /* TODO: multiply index by slot size (8) */
+        thrive_buffer_write_string(b, "    push rax\n");
+
+        gen_expr(b, node->data.array_access.left); /* evaluate array pointer/name */
+
+        thrive_buffer_write_string(b, "    pop rbx\n");        /* pop offset */
+        thrive_buffer_write_string(b, "    add rax, rbx\n");   /* add offset to base pointer */
+        thrive_buffer_write_string(b, "    mov rax, [rax]\n"); /* dereference */
+
         break;
     }
     case THRIVE_AST_BINARY:
     {
-        gen_expr(node->data.binary.left);
-        printf("    push rax\n");
+        gen_expr(b, node->data.binary.left);
 
-        gen_expr(node->data.binary.right);
-        printf("    pop rbx\n");
+        thrive_buffer_write_string(b, "    push rax\n");
+
+        gen_expr(b, node->data.binary.right);
+
+        thrive_buffer_write_string(b, "    pop rbx\n");
 
         switch (node->data.binary.op)
         {
         case THRIVE_TOKEN_KIND_ADD:
-            printf("    add rax, rbx\n");
+            thrive_buffer_write_string(b, "    add rax, rbx\n");
             break;
 
         case THRIVE_TOKEN_KIND_SUB:
-            printf("    sub rbx, rax\n");
-            printf("    mov rax, rbx\n");
+            thrive_buffer_write_string(b, "    sub rbx, rax\n");
+            thrive_buffer_write_string(b, "    mov rax, rbx\n");
             break;
 
         case THRIVE_TOKEN_KIND_MUL:
-            printf("    imul rax, rbx\n");
+            thrive_buffer_write_string(b, "    imul rax, rbx\n");
             break;
 
         case THRIVE_TOKEN_KIND_DIV:
-            printf("    xor rdx, rdx\n");
-            printf("    mov rcx, rax\n");
-            printf("    pop rax\n");
-            printf("    idiv rcx\n");
+            thrive_buffer_write_string(b, "    xor rdx, rdx\n");
+            thrive_buffer_write_string(b, "    mov rcx, rax\n");
+            thrive_buffer_write_string(b, "    pop rax\n");
+            thrive_buffer_write_string(b, "    idiv rcx\n");
             break;
 
         case THRIVE_TOKEN_KIND_LT:
-            printf("    cmp rbx, rax\n");
-            printf("    setl al\n");
-            printf("    movzx rax, al\n");
+            thrive_buffer_write_string(b, "    cmp rbx, rax\n");
+            thrive_buffer_write_string(b, "    setl al\n");
+            thrive_buffer_write_string(b, "    movzx rax, al\n");
             break;
 
         case THRIVE_TOKEN_KIND_GT:
-            printf("    cmp rbx, rax\n");
-            printf("    setg al\n");
-            printf("    movzx rax, al\n");
+            thrive_buffer_write_string(b, "    cmp rbx, rax\n");
+            thrive_buffer_write_string(b, "    setg al\n");
+            thrive_buffer_write_string(b, "    movzx rax, al\n");
             break;
 
         case THRIVE_TOKEN_KIND_LT_EQUALS:
-            printf("    cmp rbx, rax\n");
-            printf("    setle al\n");
-            printf("    movzx rax, al\n");
+            thrive_buffer_write_string(b, "    cmp rbx, rax\n");
+            thrive_buffer_write_string(b, "    setle al\n");
+            thrive_buffer_write_string(b, "    movzx rax, al\n");
             break;
 
         case THRIVE_TOKEN_KIND_GT_EQUALS:
-            printf("    cmp rbx, rax\n");
-            printf("    setge al\n");
-            printf("    movzx rax, al\n");
+            thrive_buffer_write_string(b, "    cmp rbx, rax\n");
+            thrive_buffer_write_string(b, "    setge al\n");
+            thrive_buffer_write_string(b, "    movzx rax, al\n");
             break;
 
         case THRIVE_TOKEN_KIND_EQUALS:
-            printf("    cmp rbx, rax\n");
-            printf("    sete al\n");
-            printf("    movzx rax, al\n");
+            thrive_buffer_write_string(b, "    cmp rbx, rax\n");
+            thrive_buffer_write_string(b, "    sete al\n");
+            thrive_buffer_write_string(b, "    movzx rax, al\n");
             break;
 
         case THRIVE_TOKEN_KIND_NOT_EQUALS:
-            printf("    cmp rbx, rax\n");
-            printf("    setne al\n");
-            printf("    movzx rax, al\n");
+            thrive_buffer_write_string(b, "    cmp rbx, rax\n");
+            thrive_buffer_write_string(b, "    setne al\n");
+            thrive_buffer_write_string(b, "    movzx rax, al\n");
             break;
 
         case THRIVE_TOKEN_KIND_AND_BITWISE:
-            printf("    and rax, rbx\n");
+            thrive_buffer_write_string(b, "    and rax, rbx\n");
             break;
 
         case THRIVE_TOKEN_KIND_OR_BITWISE:
-            printf("    or rax, rbx\n");
+            thrive_buffer_write_string(b, "    or rax, rbx\n");
             break;
 
         case THRIVE_TOKEN_KIND_AND_LOGICAL:
@@ -189,21 +201,32 @@ void gen_expr(thrive_ast *node)
             i32 l_false = new_label();
             i32 l_end = new_label();
 
-            gen_expr(node->data.binary.left);
-            printf("    cmp rax, 0\n");
-            printf("    je .L%d\n", l_false);
+            gen_expr(b, node->data.binary.left);
+            thrive_buffer_write_string(b, "    cmp rax, 0\n");
+            thrive_buffer_write_string(b, "    je .L");
+            thrive_buffer_write_i32(b, l_false);
+            thrive_buffer_write_string(b, "\n");
 
-            gen_expr(node->data.binary.right);
-            printf("    cmp rax, 0\n");
-            printf("    je .L%d\n", l_false);
+            gen_expr(b, node->data.binary.right);
+            thrive_buffer_write_string(b, "    cmp rax, 0\n");
+            thrive_buffer_write_string(b, "    je .L");
+            thrive_buffer_write_i32(b, l_false);
+            thrive_buffer_write_string(b, "\n");
 
-            printf("    mov rax, 1\n");
-            printf("    jmp .L%d\n", l_end);
+            thrive_buffer_write_string(b, "    mov rax, 1\n");
+            thrive_buffer_write_string(b, "    jmp .L");
+            thrive_buffer_write_i32(b, l_end);
+            thrive_buffer_write_string(b, "\n");
 
-            printf(".L%d:\n", l_false);
-            printf("    mov rax, 0\n");
+            thrive_buffer_write_string(b, ".L");
+            thrive_buffer_write_i32(b, l_false);
+            thrive_buffer_write_string(b, ":\n");
+            thrive_buffer_write_string(b, "    mov rax, 0\n");
 
-            printf(".L%d:\n", l_end);
+            thrive_buffer_write_string(b, ".L");
+            thrive_buffer_write_i32(b, l_end);
+            thrive_buffer_write_string(b, ":\n");
+
             break;
         }
 
@@ -212,21 +235,32 @@ void gen_expr(thrive_ast *node)
             i32 l_true = new_label();
             i32 l_end = new_label();
 
-            gen_expr(node->data.binary.left);
-            printf("    cmp rax, 0\n");
-            printf("    jne .L%d\n", l_true);
+            gen_expr(b, node->data.binary.left);
+            thrive_buffer_write_string(b, "    cmp rax, 0\n");
+            thrive_buffer_write_string(b, "    jne .L");
+            thrive_buffer_write_i32(b, l_true);
+            thrive_buffer_write_string(b, "\n");
 
-            gen_expr(node->data.binary.right);
-            printf("    cmp rax, 0\n");
-            printf("    jne .L%d\n", l_true);
+            gen_expr(b, node->data.binary.right);
+            thrive_buffer_write_string(b, "    cmp rax, 0\n");
+            thrive_buffer_write_string(b, "    jne .L");
+            thrive_buffer_write_i32(b, l_true);
+            thrive_buffer_write_string(b, "\n");
 
-            printf("    mov rax, 0\n");
-            printf("    jmp .L%d\n", l_end);
+            thrive_buffer_write_string(b, "    mov rax, 0\n");
+            thrive_buffer_write_string(b, "    jmp .L");
+            thrive_buffer_write_i32(b, l_end);
+            thrive_buffer_write_string(b, "\n");
 
-            printf(".L%d:\n", l_true);
-            printf("    mov rax, 1\n");
+            thrive_buffer_write_string(b, ".L");
+            thrive_buffer_write_i32(b, l_true);
+            thrive_buffer_write_string(b, ":\n");
 
-            printf(".L%d:\n", l_end);
+            thrive_buffer_write_string(b, "    mov rax, 1\n");
+
+            thrive_buffer_write_string(b, ".L");
+            thrive_buffer_write_i32(b, l_end);
+            thrive_buffer_write_string(b, ":\n");
             break;
         }
 
@@ -245,30 +279,36 @@ void gen_expr(thrive_ast *node)
 
             if (node->data.unary.op == THRIVE_TOKEN_KIND_INC)
             {
-                printf("    inc qword [rbp%d]\n", v->offset);
+                thrive_buffer_write_string(b, "    inc qword [rbp");
             }
             else
             {
-                printf("    dec qword [rbp%d]\n", v->offset);
+                thrive_buffer_write_string(b, "    dec qword [rbp");
             }
-            printf("    mov rax, [rbp%d]\n", v->offset);
+
+            thrive_buffer_write_i32(b, v->offset);
+            thrive_buffer_write_string(b, "]\n");
+
+            thrive_buffer_write_string(b, "    mov rax, [rbp");
+            thrive_buffer_write_i32(b, v->offset);
+            thrive_buffer_write_string(b, "]\n");
         }
         else
         {
-            gen_expr(node->data.unary.expr);
+            gen_expr(b, node->data.unary.expr);
 
             switch (node->data.unary.op)
             {
             case THRIVE_TOKEN_KIND_SUB:
-                printf("    neg rax\n");
+                thrive_buffer_write_string(b, "    neg rax\n");
                 break;
             case THRIVE_TOKEN_KIND_ADD:
                 /* no-op */
                 break;
             case THRIVE_TOKEN_KIND_NEGATE:
-                printf("    cmp rax, 0\n");
-                printf("    sete al\n");
-                printf("    movzx rax, al\n");
+                thrive_buffer_write_string(b, "    cmp rax, 0\n");
+                thrive_buffer_write_string(b, "    sete al\n");
+                thrive_buffer_write_string(b, "    movzx rax, al\n");
                 break;
             default:
                 break;
@@ -284,20 +324,31 @@ void gen_expr(thrive_ast *node)
         i32 l_end = new_label();
 
         /* evaluate condition */
-        gen_expr(node->data.ternary.cond);
+        gen_expr(b, node->data.ternary.cond);
 
-        printf("    cmp rax, 0\n");
-        printf("    je .L%d\n", l_else);
+        thrive_buffer_write_string(b, "    cmp rax, 0\n");
+        thrive_buffer_write_string(b, "    je .L");
+        thrive_buffer_write_i32(b, l_else);
+        thrive_buffer_write_string(b, "\n");
 
         /* then branch */
-        gen_expr(node->data.ternary.then_expr);
-        printf("    jmp .L%d\n", l_end);
+        gen_expr(b, node->data.ternary.then_expr);
+
+        thrive_buffer_write_string(b, "    jmp .L");
+        thrive_buffer_write_i32(b, l_end);
+        thrive_buffer_write_string(b, "\n");
 
         /* else branch */
-        printf(".L%d:\n", l_else);
-        gen_expr(node->data.ternary.else_expr);
+        thrive_buffer_write_string(b, ".L");
+        thrive_buffer_write_i32(b, l_else);
+        thrive_buffer_write_string(b, ":\n");
 
-        printf(".L%d:\n", l_end);
+        gen_expr(b, node->data.ternary.else_expr);
+
+        thrive_buffer_write_string(b, ".L");
+        thrive_buffer_write_i32(b, l_end);
+        thrive_buffer_write_string(b, ":\n");
+
         break;
     }
 
@@ -309,34 +360,38 @@ void gen_expr(thrive_ast *node)
         if (left->kind == THRIVE_AST_DEREF)
         {
             /* Case: *p = 10 */
-            gen_expr(right);                 /* rax = 10 */
-            printf("    push rax\n");        /* save 10 */
-            gen_expr(left->data.unary.expr); /* rax = address in p */
-            printf("    pop rbx\n");         /* rbx = 10 */
-            printf("    mov [rax], rbx\n");  /* store 10 at address in rax */
+            gen_expr(b, right);                                    /* rax = 10 */
+            thrive_buffer_write_string(b, "    push rax\n");       /* save 10 */
+            gen_expr(b, left->data.unary.expr);                    /* rax = address in p */
+            thrive_buffer_write_string(b, "    pop rbx\n");        /* rbx = 10 */
+            thrive_buffer_write_string(b, "    mov [rax], rbx\n"); /* store 10 at address in rax */
         }
         else if (left->kind == THRIVE_AST_ARRAY_ACCESS)
         {
-            gen_expr(right);          /* rax = value to store */
-            printf("    push rax\n"); /* save value */
+            gen_expr(b, right);                              /* rax = value to store */
+            thrive_buffer_write_string(b, "    push rax\n"); /* save value */
 
-            gen_expr(left->data.array_access.index); /* calculate offset */
-            printf("    imul rax, 8\n");
-            printf("    push rax\n"); /* save offset */
+            gen_expr(b, left->data.array_access.index); /* calculate offset */
+            thrive_buffer_write_string(b, "    imul rax, 8\n");
+            thrive_buffer_write_string(b, "    push rax\n"); /* save offset */
 
-            gen_expr(left->data.array_access.left); /* rax = base array pointer */
-            printf("    pop rbx\n");                /* rbx = offset */
-            printf("    add rax, rbx\n");           /* rax = target memory address */
+            gen_expr(b, left->data.array_access.left);           /* rax = base array pointer */
+            thrive_buffer_write_string(b, "    pop rbx\n");      /* rbx = offset */
+            thrive_buffer_write_string(b, "    add rax, rbx\n"); /* rax = target memory address */
 
-            printf("    pop rbx\n");        /* rbx = value to store */
-            printf("    mov [rax], rbx\n"); /* write to array! */
+            thrive_buffer_write_string(b, "    pop rbx\n");        /* rbx = value to store */
+            thrive_buffer_write_string(b, "    mov [rax], rbx\n"); /* write to array! */
         }
         else
         {
             /* Case: i = 10 */
-            gen_expr(right);
+            gen_expr(b, right);
+
             thrive_var *v = find_var(left->data.name.start, left->data.name.length);
-            printf("    mov [rbp%d], rax\n", v->offset);
+
+            thrive_buffer_write_string(b, "    mov [rbp");
+            thrive_buffer_write_i32(b, v->offset);
+            thrive_buffer_write_string(b, "], rax\n");
         }
         break;
     }
@@ -345,15 +400,20 @@ void gen_expr(thrive_ast *node)
     {
         thrive_ast *target = node->data.unary.expr;
         thrive_var *v = find_var(target->data.name.start, target->data.name.length);
-        printf("    lea rax, [rbp%d]\n", v->offset);
+
+        thrive_buffer_write_string(b, "    lea rax, [rbp");
+        thrive_buffer_write_i32(b, v->offset);
+        thrive_buffer_write_string(b, "]\n");
+
         break;
     }
 
     case THRIVE_AST_DEREF:
     {
         /* *ptr -> Treat the value in the variable as an address */
-        gen_expr(node->data.unary.expr);
-        printf("    mov rax, [rax]\n");
+        gen_expr(b, node->data.unary.expr);
+
+        thrive_buffer_write_string(b, "    mov rax, [rax]\n");
         break;
     }
 
@@ -364,7 +424,11 @@ void gen_expr(thrive_ast *node)
             /* Error: Break used outside of loop */
             return;
         }
-        printf("    jmp .L%d\n", current_break_label);
+
+        thrive_buffer_write_string(b, "    jmp .L");
+        thrive_buffer_write_i32(b, current_break_label);
+        thrive_buffer_write_string(b, "\n");
+
         break;
     }
 
@@ -375,7 +439,11 @@ void gen_expr(thrive_ast *node)
             /* Error: Continue used outside of loop */
             return;
         }
-        printf("    jmp .L%d\n", current_continue_label);
+
+        thrive_buffer_write_string(b, "    jmp .L");
+        thrive_buffer_write_i32(b, current_continue_label);
+        thrive_buffer_write_string(b, "\n");
+
         break;
     }
 
@@ -385,28 +453,40 @@ void gen_expr(thrive_ast *node)
         s8 *arg_regs[] = {"rcx", "rdx", "r8", "r9"};
         u32 arg_count = 0;
         u32 i;
+        u32 reg_args;
+        u32 stack_cleanup;
 
         while (curr)
         {
-            gen_expr(curr);
-            printf("    push rax\n");
+            gen_expr(b, curr);
+
+            thrive_buffer_write_string(b, "    push rax\n");
+
             arg_count++;
             curr = curr->next;
         }
 
-        u32 reg_args = arg_count > 4 ? 4 : arg_count;
+        reg_args = arg_count > 4 ? 4 : arg_count;
+
         for (i = reg_args; i > 0; --i)
         {
-            printf("    pop %s\n", arg_regs[i - 1]);
+            thrive_buffer_write_string(b, "    pop ");
+            thrive_buffer_write_string(b, arg_regs[i - 1]);
+            thrive_buffer_write_string(b, "\n");
         }
 
-        printf("    sub rsp, 32\n");
-        printf("    call %.*s\n",
-               node->data.func_call.name->data.name.length,
-               node->data.func_call.name->data.name.start);
+        thrive_buffer_write_string(b, "    sub rsp, 32\n");
 
-        u32 stack_cleanup = 32 + (arg_count > 4 ? (arg_count - 4) * 8 : 0);
-        printf("    add rsp, %u\n", stack_cleanup);
+        thrive_buffer_write_string(b, "    call ");
+        thrive_buffer_write_string_length(b, node->data.func_call.name->data.name.length, node->data.func_call.name->data.name.start);
+        thrive_buffer_write_string(b, "\n");
+
+        stack_cleanup = 32 + (arg_count > 4 ? (arg_count - 4) * 8 : 0);
+
+        thrive_buffer_write_string(b, "    add rsp, ");
+        thrive_buffer_write_i32(b, stack_cleanup);
+        thrive_buffer_write_string(b, "\n");
+
         break;
     }
 
@@ -416,22 +496,25 @@ void gen_expr(thrive_ast *node)
         string_pool[id].start = node->data.string_lit.start;
         string_pool[id].length = node->data.string_lit.length;
 
-        printf("    lea rax, [rel STR_%d]\n", id);
+        thrive_buffer_write_string(b, "    lea rax, [rel STR_");
+        thrive_buffer_write_i32(b, id);
+        thrive_buffer_write_string(b, "]\n");
+
         break;
     }
 
     case THRIVE_TOKEN_KIND_LSHIFT:
     {
-        printf("    mov rcx, rax\n");
-        printf("    shl rbx, cl\n");
-        printf("    mov rax, rbx\n");
+        thrive_buffer_write_string(b, "    mov rcx, rax\n");
+        thrive_buffer_write_string(b, "    shl rbx, cl\n");
+        thrive_buffer_write_string(b, "    mov rax, rbx\n");
         break;
     }
     case THRIVE_TOKEN_KIND_RSHIFT:
     {
-        printf("    mov rcx, rax\n");
-        printf("    shr rbx, cl\n");
-        printf("    mov rax, rbx\n");
+        thrive_buffer_write_string(b, "    mov rcx, rax\n");
+        thrive_buffer_write_string(b, "    shr rbx, cl\n");
+        thrive_buffer_write_string(b, "    mov rax, rbx\n");
         break;
     }
 
@@ -440,7 +523,7 @@ void gen_expr(thrive_ast *node)
     }
 }
 
-void gen_stmt(thrive_ast *node)
+void gen_stmt(thrive_buffer *b, thrive_ast *node)
 {
     switch (node->kind)
     {
@@ -456,8 +539,11 @@ void gen_stmt(thrive_ast *node)
 
         if (value)
         {
-            gen_expr(value);
-            printf("    mov [rbp%d], rax\n", v->offset);
+            gen_expr(b, value);
+
+            thrive_buffer_write_string(b, "    mov [rbp");
+            thrive_buffer_write_i32(b, v->offset);
+            thrive_buffer_write_string(b, "], rax\n");
         }
 
         break;
@@ -469,27 +555,42 @@ void gen_stmt(thrive_ast *node)
         int l_end = new_label();
 
         /* condition */
-        gen_expr(node->data.if_stmt.cond);
+        gen_expr(b, node->data.if_stmt.cond);
 
-        printf("    cmp rax, 0\n");
-
-        if (node->data.if_stmt.else_branch)
-            printf("    je .L%d\n", l_else);
-        else
-            printf("    je .L%d\n", l_end);
-
-        /* then */
-        gen_stmt(node->data.if_stmt.then_branch);
+        thrive_buffer_write_string(b, "    cmp rax, 0\n");
 
         if (node->data.if_stmt.else_branch)
         {
-            printf("    jmp .L%d\n", l_end);
-
-            printf(".L%d:\n", l_else);
-            gen_stmt(node->data.if_stmt.else_branch);
+            thrive_buffer_write_string(b, "    je .L");
+            thrive_buffer_write_i32(b, l_else);
+            thrive_buffer_write_string(b, "\n");
+        }
+        else
+        {
+            thrive_buffer_write_string(b, "    je .L");
+            thrive_buffer_write_i32(b, l_end);
+            thrive_buffer_write_string(b, "\n");
         }
 
-        printf(".L%d:\n", l_end);
+        /* then */
+        gen_stmt(b, node->data.if_stmt.then_branch);
+
+        if (node->data.if_stmt.else_branch)
+        {
+            thrive_buffer_write_string(b, "    jmp .L");
+            thrive_buffer_write_i32(b, l_end);
+            thrive_buffer_write_string(b, "\n");
+
+            thrive_buffer_write_string(b, ".L");
+            thrive_buffer_write_i32(b, l_else);
+            thrive_buffer_write_string(b, ":\n");
+
+            gen_stmt(b, node->data.if_stmt.else_branch);
+        }
+
+        thrive_buffer_write_string(b, ".L");
+        thrive_buffer_write_i32(b, l_end);
+        thrive_buffer_write_string(b, ":\n");
 
         break;
     }
@@ -508,25 +609,37 @@ void gen_stmt(thrive_ast *node)
         current_continue_label = step_label;
 
         /* 1. Init */
-        gen_expr(node->data.for_loop.init);
+        gen_expr(b, node->data.for_loop.init);
 
-        printf(".L%d:\n", start_label);
+        thrive_buffer_write_string(b, ".L");
+        thrive_buffer_write_i32(b, start_label);
+        thrive_buffer_write_string(b, ":\n");
 
         /* 2. Condition */
-        gen_expr(node->data.for_loop.cond);
-        printf("    test rax, rax\n");
-        printf("    jz .L%d\n", end_label);
+        gen_expr(b, node->data.for_loop.cond);
+        thrive_buffer_write_string(b, "    test rax, rax\n");
+        thrive_buffer_write_string(b, "    jz .L");
+        thrive_buffer_write_i32(b, end_label);
+        thrive_buffer_write_string(b, "\n");
 
         /* 3. Body */
-        gen_stmt(node->data.for_loop.body);
+        gen_stmt(b, node->data.for_loop.body);
 
         /* 4. Step (Continue jumps here!) */
-        printf(".L%d:\n", step_label);
-        gen_expr(node->data.for_loop.step);
-        printf("    jmp .L%d\n", start_label);
+        thrive_buffer_write_string(b, ".L");
+        thrive_buffer_write_i32(b, step_label);
+        thrive_buffer_write_string(b, ":\n");
+
+        gen_expr(b, node->data.for_loop.step);
+
+        thrive_buffer_write_string(b, "    jmp .L");
+        thrive_buffer_write_i32(b, start_label);
+        thrive_buffer_write_string(b, "\n");
 
         /* 5. End (Break jumps here!) */
-        printf(".L%d:\n", end_label);
+        thrive_buffer_write_string(b, ".L");
+        thrive_buffer_write_i32(b, end_label);
+        thrive_buffer_write_string(b, ":\n");
 
         /* Restore parent context */
         current_break_label = old_break;
@@ -538,7 +651,7 @@ void gen_stmt(thrive_ast *node)
         thrive_ast *curr = node->data.block.body;
         while (curr)
         {
-            gen_stmt(curr);
+            gen_stmt(b, curr);
             curr = curr->next;
         }
         break;
@@ -550,8 +663,11 @@ void gen_stmt(thrive_ast *node)
         s8 *arg_regs[] = {"rcx", "rdx", "r8", "r9"};
         u32 p_idx = 0;
 
-        printf("\n%.*s:\n", node->data.func_decl.name->data.name.length, node->data.func_decl.name->data.name.start);
-        printf("    push rbp\n    mov rbp, rsp\n    sub rsp, 256\n");
+        thrive_buffer_write_string(b, "\n");
+        thrive_buffer_write_string_length(b, node->data.func_decl.name->data.name.length, node->data.func_decl.name->data.name.start);
+        thrive_buffer_write_string(b, ":\n");
+
+        thrive_buffer_write_string(b, "    push rbp\n    mov rbp, rsp\n    sub rsp, 256\n");
 
         reset_locals();
         in_function = 1;
@@ -559,29 +675,37 @@ void gen_stmt(thrive_ast *node)
         while (curr && p_idx < 4)
         {
             thrive_var *v = add_var(curr->data.name.start, curr->data.name.length, 0, 0);
-            printf("    mov [rbp%d], %s\n", v->offset, arg_regs[p_idx++]);
+
+            thrive_buffer_write_string(b, "    mov [rbp");
+            thrive_buffer_write_i32(b, v->offset);
+            thrive_buffer_write_string(b, "], ");
+            thrive_buffer_write_string(b, arg_regs[p_idx++]);
+            thrive_buffer_write_string(b, "\n");
+
             curr = curr->next;
         }
         /* Note: Handle 5th+ params from [rbp + 16, 24, etc] if needed */
 
-        gen_stmt(node->data.func_decl.body);
-        printf("    leave\n    ret\n");
+        gen_stmt(b, node->data.func_decl.body);
+
+        thrive_buffer_write_string(b, "    leave\n    ret\n");
+
         in_function = 0;
         break;
     }
     case THRIVE_AST_RETURN:
     {
-        gen_expr(node->data.ret.expr);
+        gen_expr(b, node->data.ret.expr);
 
         if (in_function)
         {
-            printf("    leave\n");
-            printf("    ret\n");
+            thrive_buffer_write_string(b, "    leave\n");
+            thrive_buffer_write_string(b, "    ret\n");
         }
         else
         {
-            printf("    mov rcx, rax\n");
-            printf("    call ExitProcess\n");
+            thrive_buffer_write_string(b, "    mov rcx, rax\n");
+            thrive_buffer_write_string(b, "    call ExitProcess\n");
         }
         break;
     }
@@ -593,17 +717,17 @@ void gen_stmt(thrive_ast *node)
     }
 
     default:
-        gen_expr(node);
+        gen_expr(b, node);
         break;
     }
 }
 
-void gen_program(thrive_ast *node)
+void gen_program(thrive_buffer *b, thrive_ast *node)
 {
     thrive_ast *curr;
     u32 i;
 
-    printf("default rel\n");
+    thrive_buffer_write_string(b, "default rel\n");
 
     /* Pass 1: Find and print all external declarations at the top */
     curr = node->data.block.body;
@@ -611,19 +735,22 @@ void gen_program(thrive_ast *node)
     {
         if (curr->kind == THRIVE_AST_EXT_DECL)
         {
-            printf("extern %.*s\n",
-                   curr->data.ext_decl.name->data.name.length,
-                   curr->data.ext_decl.name->data.name.start);
+            thrive_buffer_write_string(b, "extern ");
+            thrive_buffer_write_string_length(
+                b,
+                curr->data.ext_decl.name->data.name.length,
+                curr->data.ext_decl.name->data.name.start);
+            thrive_buffer_write_string(b, "\n");
         }
         curr = curr->next;
     }
 
-    printf("\nsection .text\n");
-    printf("global main\n\n");
-    printf("main:\n");
-    printf("    push rbp\n");
-    printf("    mov rbp, rsp\n");
-    printf("    sub rsp, 256\n");
+    thrive_buffer_write_string(b, "\nsection .text\n");
+    thrive_buffer_write_string(b, "global main\n\n");
+    thrive_buffer_write_string(b, "main:\n");
+    thrive_buffer_write_string(b, "    push rbp\n");
+    thrive_buffer_write_string(b, "    mov rbp, rsp\n");
+    thrive_buffer_write_string(b, "    sub rsp, 256\n");
 
     reset_locals();
 
@@ -633,7 +760,7 @@ void gen_program(thrive_ast *node)
     {
         if (curr->kind != THRIVE_AST_FUNC_DECL && curr->kind != THRIVE_AST_EXT_DECL)
         {
-            gen_stmt(curr);
+            gen_stmt(b, curr);
         }
         curr = curr->next;
     }
@@ -644,7 +771,7 @@ void gen_program(thrive_ast *node)
     {
         if (curr->kind == THRIVE_AST_FUNC_DECL)
         {
-            gen_stmt(curr);
+            gen_stmt(b, curr);
         }
         curr = curr->next;
     }
@@ -652,11 +779,16 @@ void gen_program(thrive_ast *node)
     /* Emit Data Section for Strings */
     if (string_count > 0)
     {
-        printf("\nsection .data\n");
+        thrive_buffer_write_string(b, "\nsection .data\n");
+
         for (i = 0; i < string_count; ++i)
         {
             u32 j;
-            printf("STR_%u: db ", i);
+
+            thrive_buffer_write_string(b, "STR_");
+            thrive_buffer_write_i32(b, i);
+            thrive_buffer_write_string(b, ": db ");
+
             for (j = 0; j < string_pool[i].length; ++j)
             {
                 if (string_pool[i].start[j] == '\\' && j + 1 < string_pool[i].length)
@@ -665,28 +797,31 @@ void gen_program(thrive_ast *node)
                     switch (string_pool[i].start[j])
                     {
                     case 'n':
-                        printf("10, ");
+                        thrive_buffer_write_string(b, "10, ");
                         break;
                     case 'r':
-                        printf("13, ");
+                        thrive_buffer_write_string(b, "13, ");
                         break;
                     case 't':
-                        printf("9, ");
+                        thrive_buffer_write_string(b, "9, ");
                         break;
                     case '0':
-                        printf("0, ");
+                        thrive_buffer_write_string(b, "0, ");
                         break;
                     default:
-                        printf("%d, ", string_pool[i].start[j]);
+                        thrive_buffer_write_i32(b, string_pool[i].start[j]);
+                        thrive_buffer_write_string(b, ", ");
                         break;
                     }
                 }
                 else
                 {
-                    printf("%d, ", string_pool[i].start[j]);
+                    thrive_buffer_write_i32(b, string_pool[i].start[j]);
+                    thrive_buffer_write_string(b, ", ");
                 }
             }
-            printf("0\n"); /* Null terminator */
+
+            thrive_buffer_write_string(b, "0\n"); /* Null terminator */
         }
     }
 }
@@ -1196,7 +1331,14 @@ int main(void)
         /* Codegen */
         printf("--------------------\n");
         {
-            gen_program(ast);
+            u8 nasm_data[8192 * 2];
+            thrive_buffer asm_buffer = {0};
+            asm_buffer.data = nasm_data;
+            asm_buffer.capacity = 8192 * 2;
+
+            gen_program(&asm_buffer, ast);
+
+            printf("%s\n", nasm_data);
         }
 
         printf("\n");
