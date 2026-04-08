@@ -2559,6 +2559,15 @@ THRIVE_API THRIVE_INLINE void thrive_x64_ret(thrive_buffer *b)
     thrive_buffer_write_u8(b, 0xC3);
 }
 
+/* lea rax, [rel STR_0] */
+THRIVE_API THRIVE_INLINE void thrive_x64_lea_rip_rel32(thrive_buffer *b, thrive_x64_reg dst, u32 rel)
+{
+    thrive_x64_rex(b, 1, dst, 0);
+    thrive_buffer_write_u8(b, 0x8D);
+    thrive_buffer_write_u8(b, 0x05 | ((dst & 7) << 3));
+    thrive_buffer_write_u32(b, rel);
+}
+
 /* direct call */
 THRIVE_API THRIVE_INLINE void thrive_x64_call_rel32(thrive_buffer *b, u32 curr_rva, u32 target_rva)
 {
