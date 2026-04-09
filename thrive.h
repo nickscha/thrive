@@ -139,22 +139,6 @@ typedef enum thrive_status_type
 
 } thrive_status_type;
 
-typedef struct thrive_status
-{
-    thrive_status_type type;
-
-    s8 *message;
-
-    s8 *token_start;
-    s8 *token_end;
-
-    u32 line;
-    u32 column;
-
-    s8 *line_start;
-
-} thrive_status;
-
 typedef enum thrive_token_kind
 {
     THRIVE_TOKEN_KIND_EOF = 0,
@@ -434,59 +418,6 @@ struct thrive_ast
     } data;
 };
 
-typedef struct thrive_buffer
-{
-    u8 *data;
-    u32 size;
-    u32 capacity;
-
-} thrive_buffer;
-
-typedef struct thrive_p32_plus_import
-{
-    s8 *library;       /* e.g. "kernel32.dll" */
-    s8 **imports;      /* e.g. "ExitProcess", "Sleep" */
-    u32 imports_count; /* count of imports entries */
-
-} thrive_p32_plus_import;
-
-typedef enum thrive_x64_reg
-{
-    REG_RAX = 0,
-    REG_RCX = 1,
-    REG_RDX = 2,
-    REG_RBX = 3,
-    REG_RSP = 4,
-    REG_RBP = 5,
-    REG_RSI = 6,
-    REG_RDI = 7,
-    REG_R8 = 8,
-    REG_R9 = 9,
-    REG_R10 = 10,
-    REG_R11 = 11,
-    REG_R12 = 12,
-    REG_R13 = 13,
-    REG_R14 = 14,
-    REG_R15 = 15
-} thrive_x64_reg;
-
-typedef enum thrive_x64_op_ext
-{
-    OP_EXT_ADD = 0,
-    OP_EXT_SUB = 5,
-    OP_EXT_MOV = 0
-} thrive_x64_op_ext;
-
-typedef enum thrive_x64_cc
-{
-    CC_E = 4,
-    CC_NE = 5,
-    CC_L = 12,
-    CC_LE = 14,
-    CC_G = 15,
-    CC_GE = 13
-} thrive_x64_cc;
-
 /* #############################################################################
  * # [SECTION] Helper Functions
  * #############################################################################
@@ -542,6 +473,22 @@ THRIVE_API THRIVE_INLINE u32 thrive_align_up(u32 val, u32 align)
  * # [SECTION] Thrive Status
  * #############################################################################
  */
+typedef struct thrive_status
+{
+    thrive_status_type type;
+
+    s8 *message;
+
+    s8 *token_start;
+    s8 *token_end;
+
+    u32 line;
+    u32 column;
+
+    s8 *line_start;
+
+} thrive_status;
+
 THRIVE_API void thrive_panic(thrive_status status);
 
 THRIVE_API void thrive_error(thrive_state *state, thrive_status_type type, s8 *message)
@@ -1957,6 +1904,14 @@ THRIVE_API thrive_ast *thrive_ast_fold(thrive_ast *node)
  * # [SECTION] Buffered Writer
  * #############################################################################
  */
+typedef struct thrive_buffer
+{
+    u8 *data;
+    u32 size;
+    u32 capacity;
+
+} thrive_buffer;
+
 THRIVE_API THRIVE_INLINE void thrive_buffer_write_u8(thrive_buffer *b, u8 value)
 {
     if (b->size >= b->capacity)
@@ -2061,6 +2016,14 @@ THRIVE_API THRIVE_INLINE void thrive_buffer_align(thrive_buffer *b, u32 align)
  * # [SECTION] PE32+ Generator
  * #############################################################################
  */
+typedef struct thrive_p32_plus_import
+{
+    s8 *library;       /* e.g. "kernel32.dll" */
+    s8 **imports;      /* e.g. "ExitProcess", "Sleep" */
+    u32 imports_count; /* count of imports entries */
+
+} thrive_p32_plus_import;
+
 u32 thrive_pe32_plus_get_iat_rva(thrive_p32_plus_import *imports, u32 num_imports, u32 text_vsize, u32 dll_index, u32 func_index)
 {
     u32 text_rva = 0x1000;
@@ -2329,6 +2292,59 @@ void thrive_pe32_plus_generate(
  * # [SECTION] X86_64 Machine Code Emitter
  * #############################################################################
  */
+typedef enum thrive_x64_reg
+{
+    REG_RAX = 0,
+    REG_RCX = 1,
+    REG_RDX = 2,
+    REG_RBX = 3,
+    REG_RSP = 4,
+    REG_RBP = 5,
+    REG_RSI = 6,
+    REG_RDI = 7,
+    REG_R8 = 8,
+    REG_R9 = 9,
+    REG_R10 = 10,
+    REG_R11 = 11,
+    REG_R12 = 12,
+    REG_R13 = 13,
+    REG_R14 = 14,
+    REG_R15 = 15
+} thrive_x64_reg;
+
+typedef enum thrive_x64_op_ext
+{
+    OP_EXT_ADD = 0,
+    OP_EXT_OR = 1,
+    OP_EXT_ADC = 2,
+    OP_EXT_SBB = 3,
+    OP_EXT_AND = 4,
+    OP_EXT_SUB = 5,
+    OP_EXT_XOR = 6,
+    OP_EXT_CMP = 7,
+    OP_EXT_MOV = 0
+} thrive_x64_op_ext;
+
+typedef enum thrive_x64_cc
+{
+    CC_O = 0x0,
+    CC_NO = 0x1,
+    CC_B = 0x2,
+    CC_AE = 0x3,
+    CC_E = 0x4,
+    CC_NE = 0x5,
+    CC_BE = 0x6,
+    CC_A = 0x7,
+    CC_S = 0x8,
+    CC_NS = 0x9,
+    CC_P = 0xA,
+    CC_NP = 0xB,
+    CC_L = 0xC,
+    CC_GE = 0xD,
+    CC_LE = 0xE,
+    CC_G = 0xF
+} thrive_x64_cc;
+
 THRIVE_API THRIVE_INLINE void thrive_x64_modrm_reg(thrive_buffer *b, thrive_x64_reg reg, thrive_x64_reg rm)
 {
     /* Mod = 11 (register-direct addressing) */
@@ -2490,6 +2506,22 @@ THRIVE_API THRIVE_INLINE void thrive_x64_sub_rr(thrive_buffer *b, thrive_x64_reg
     thrive_x64_rex(b, 1, src, dst);
     thrive_buffer_write_u8(b, 0x29);
     thrive_x64_modrm_reg(b, src, dst);
+}
+
+THRIVE_API THRIVE_INLINE void thrive_x64_sub_rsp_imm32(thrive_buffer *b, u32 imm)
+{
+    thrive_buffer_write_u8(b, 0x48);
+    thrive_buffer_write_u8(b, 0x81);
+    thrive_buffer_write_u8(b, 0xEC);
+    thrive_buffer_write_u32(b, imm);
+}
+
+THRIVE_API THRIVE_INLINE void thrive_x64_add_rsp_imm32(thrive_buffer *b, u32 imm)
+{
+    thrive_buffer_write_u8(b, 0x48);
+    thrive_buffer_write_u8(b, 0x81);
+    thrive_buffer_write_u8(b, 0xC4);
+    thrive_buffer_write_u32(b, imm);
 }
 
 /* imul r64, r64 */

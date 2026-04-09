@@ -1129,12 +1129,16 @@ THRIVE_API void thrive_ast_print(thrive_ast *node, u32 depth)
  */
 THRIVE_API void thrive_panic(thrive_status status)
 {
+
+    s8 *p = status.line_start;
+    u32 i;
+    u32 offset;
+    u32 len;
+
     printf("[error] %s\n", status.message);
     printf(" --> input:%u:%u\n", status.line, status.column);
     printf("    |\n");
     printf("%3d | ", status.line);
-
-    s8 *p = status.line_start;
 
     while (*p && *p != '\n')
     {
@@ -1144,16 +1148,14 @@ THRIVE_API void thrive_panic(thrive_status status)
     putchar('\n');
     printf("    | ");
 
-    u32 offset = (u32)(status.token_start - status.line_start);
-
-    u32 i;
+    offset = (u32)(status.token_start - status.line_start);
 
     for (i = 0; i < offset; ++i)
     {
         putchar(' ');
     }
 
-    u32 len = (u32)(status.token_end - status.token_start);
+    len = (u32)(status.token_end - status.token_start);
 
     if (len == 0)
     {
