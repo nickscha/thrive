@@ -130,15 +130,6 @@ THRIVE_STATIC_ASSERT(sizeof(f64) == 8, f64_size_must_be_8);
  * # [SECTION] Structs anb Enums
  * #############################################################################
  */
-typedef enum thrive_status_type
-{
-    THRIVE_STATUS_OK = 0,
-    THRIVE_STATUS_ERROR_ARGUMENTS,
-    THRIVE_STATUS_ERROR_SYNTAX,
-    THRIVE_STATUS_ERROR_MEMORY
-
-} thrive_status_type;
-
 typedef enum thrive_token_kind
 {
     THRIVE_TOKEN_KIND_EOF = 0,
@@ -473,6 +464,15 @@ THRIVE_API THRIVE_INLINE u32 thrive_align_up(u32 val, u32 align)
  * # [SECTION] Thrive Status
  * #############################################################################
  */
+typedef enum thrive_status_type
+{
+    THRIVE_STATUS_OK = 0,
+    THRIVE_STATUS_ERROR_ARGUMENTS,
+    THRIVE_STATUS_ERROR_SYNTAX,
+    THRIVE_STATUS_ERROR_MEMORY
+
+} thrive_status_type;
+
 typedef struct thrive_status
 {
     thrive_status_type type;
