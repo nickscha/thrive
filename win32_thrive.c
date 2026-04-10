@@ -490,6 +490,8 @@ typedef enum win32_thrive_metrics
     METRIC_IO_FILE_READ = 0,
     METRIC_PARSING,
     METRIC_FOLDING,
+    METRIC_CODEGEN,
+    METRIC_IO_FILE_WRITE,
     METRIC_COUNT
 
 } win32_thrive_metrics;
@@ -498,7 +500,9 @@ typedef enum win32_thrive_metrics
 static s8 *win32_thrive_metric_names[] = {
     "time_io_file_read ",
     "time_parsing      ",
-    "time_folding      "};
+    "time_folding      ",
+    "time_codegen      ",
+    "time_io_file_write"};
 
 typedef struct win32_thrive_metric
 {
@@ -513,19 +517,19 @@ typedef struct win32_thrive_metric
  */
 THRIVE_API void thrive_panic(thrive_status status)
 {
-    (void)status;
-
-    /*
-    if (s.status.type != THRIVE_STATUS_OK)
+    if (status.type != THRIVE_STATUS_OK)
     {
+        u32 written = 0;
+
+        void *hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+
         SetConsoleTextAttribute(hConsole, 12);
         WriteConsoleA(hConsole, "[thrive] ", 9, &written, 0);
         SetConsoleTextAttribute(hConsole, 7);
 
-        WriteConsoleA(hConsole, s.status.message, thrive_string_length(s.status.message), &written, 0);
+        WriteConsoleA(hConsole, status.message, thrive_string_length(status.message), &written, 0);
         WriteConsoleA(hConsole, "\n", 1, &written, 0);
     }
-    */
 }
 
 THRIVE_API i32 thrive_compile(s8 *file_name, void *hConsole, LARGE_INTEGER *freq)
@@ -542,7 +546,7 @@ THRIVE_API i32 thrive_compile(s8 *file_name, void *hConsole, LARGE_INTEGER *freq
     QueryPerformanceCounter(&metrics[METRIC_IO_FILE_READ].time_end);
 
     /* Print source code */
-    SetConsoleTextAttribute(hConsole, 9); /* blue */
+    SetConsoleTextAttribute(hConsole, 9); 
     WriteConsoleA(hConsole, "[thrive] ", 9, &written, 0);
     SetConsoleTextAttribute(hConsole, 7);
     WriteConsoleA(hConsole, "source code:\n", 13, &written, 0);
@@ -577,7 +581,30 @@ THRIVE_API i32 thrive_compile(s8 *file_name, void *hConsole, LARGE_INTEGER *freq
         ast = thrive_ast_fold(ast);
         QueryPerformanceCounter(&metrics[METRIC_FOLDING].time_end);
 
-        (void)ast;
+        {
+            u8 x64_data[8192];
+            thrive_buffer code_buffer = {0};
+
+            u8 pe_data[16384];
+            thrive_buffer exe_buffer = {0};
+
+            code_buffer.data = x64_data;
+            code_buffer.capacity = 8192;
+
+            exe_buffer.data = pe_data;
+            exe_buffer.capacity = 16384;
+
+            QueryPerformanceCounter(&metrics[METRIC_CODEGEN].time_start);
+            thrive_x64_codegen_program(&code_buffer, ast, &exe_buffer);
+            QueryPerformanceCounter(&metrics[METRIC_CODEGEN].time_end);
+
+            QueryPerformanceCounter(&metrics[METRIC_IO_FILE_WRITE].time_start);
+            if (!win32_io_file_write("out.exe", exe_buffer.data, exe_buffer.size))
+            {
+                return 1;
+            }
+            QueryPerformanceCounter(&metrics[METRIC_IO_FILE_WRITE].time_end);
+        }
 
         VirtualFree(s.ast_pool, 0, MEM_RELEASE);
     }

@@ -1,6 +1,34 @@
 ; this is a line comment
-u32 a   = 42
-u32 b   = 27
-u32 c   = 1
-u32 res = a * c + b * 10 * (2 + 4)
-ret res
+ext u32 Sleep(u32 milliseconds)
+ext u32 MessageBoxA(u32 hWnd : s8 *lpText : s8 *lpCaption : u32 uType)
+ext u32 ExitProcess(u32 uExitCode)
+
+s8 *text = "Hello World from THRIVE!\nIt works!"
+s8 *text2 = "arr[1] == 10"
+s8 *text3 = "Goodbye"
+s8 *caption = "Win32 Success"
+u32 arr[3]
+
+arr[0] = 5
+arr[1] = arr[0] + 5
+arr[2] = 15
+
+u32 *ptr = arr
+
+u32 add(u32 a : u32 b) {
+ ret a + b
+}
+
+u32 i = 0
+for (i = 0 : i < (0x01 + 0b10) : ++i) {
+  MessageBoxA(0 : text : caption : 0)
+  if (i == 0) {
+     continue
+  } else if ((i == add(0 : 1) && ptr[i] == 10) ? 1 : 0) {
+     Sleep(500)
+     MessageBoxA(0 : text2 : caption : 0)
+     break
+  }
+}
+MessageBoxA(0 : text3 : caption : 0)
+ExitProcess(0);
