@@ -2958,6 +2958,20 @@ THRIVE_API void thrive_x64_codegen_expression(thrive_buffer *b, thrive_ast *node
             thrive_x64_codegen_bind_label(b, l_end);
             break;
         }
+        case THRIVE_TOKEN_KIND_LSHIFT:
+        {
+            thrive_x64_mov_rr(b, REG_RCX, REG_RAX);
+            thrive_x64_shl_cl(b, REG_RBX);
+            thrive_x64_mov_rr(b, REG_RAX, REG_RBX);
+            break;
+        }
+        case THRIVE_TOKEN_KIND_RSHIFT:
+        {
+            thrive_x64_mov_rr(b, REG_RCX, REG_RAX);
+            thrive_x64_shr_cl(b, REG_RBX);
+            thrive_x64_mov_rr(b, REG_RAX, REG_RBX);
+            break;
+        }
         default:
             break;
         }
@@ -3129,18 +3143,6 @@ THRIVE_API void thrive_x64_codegen_expression(thrive_buffer *b, thrive_ast *node
         thrive_x64_codegen_record_fixup(b, FIXUP_STRING, (i32)id);
         break;
     }
-    /*
-    case THRIVE_TOKEN_KIND_LSHIFT:
-        thrive_x64_mov_rr(b, REG_RCX, REG_RAX);
-        thrive_x64_shl_cl(b, REG_RBX);
-        thrive_x64_mov_rr(b, REG_RAX, REG_RBX);
-        break;
-    case THRIVE_TOKEN_KIND_RSHIFT:
-        thrive_x64_mov_rr(b, REG_RCX, REG_RAX);
-        thrive_x64_shr_cl(b, REG_RBX);
-        thrive_x64_mov_rr(b, REG_RAX, REG_RBX);
-        break;
-    */
     default:
         break;
     }
