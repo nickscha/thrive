@@ -529,6 +529,8 @@ THRIVE_API void thrive_panic(thrive_status status)
 
         WriteConsoleA(hConsole, status.message, thrive_string_length(status.message), &written, 0);
         WriteConsoleA(hConsole, "\n", 1, &written, 0);
+
+        ExitProcess(1);
     }
 }
 
@@ -546,7 +548,7 @@ THRIVE_API i32 thrive_compile(s8 *file_name, void *hConsole, LARGE_INTEGER *freq
     QueryPerformanceCounter(&metrics[METRIC_IO_FILE_READ].time_end);
 
     /* Print source code */
-    SetConsoleTextAttribute(hConsole, 9); 
+    SetConsoleTextAttribute(hConsole, 9);
     WriteConsoleA(hConsole, "[thrive] ", 9, &written, 0);
     SetConsoleTextAttribute(hConsole, 7);
     WriteConsoleA(hConsole, "source code:\n", 13, &written, 0);

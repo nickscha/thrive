@@ -3068,26 +3068,50 @@ THRIVE_API void thrive_x64_codegen_expression(thrive_buffer *b, thrive_ast *node
     {
         thrive_ast *curr = node->data.func_call.args;
         thrive_x64_reg arg_regs[] = {REG_RCX, REG_RDX, REG_R8, REG_R9};
-        u32 arg_count = 0, i, stack_cleanup;
+        u32 arg_count = 0, i, stack_cleanup, extra_args;
         i32 f_idx = thrive_x64_codegen_find_or_add_func(node->data.func_call.name->data.name.start, node->data.func_call.name->data.name.length);
-        u32 reg_args;
+        u32 reg_args_to_process;
 
         while (curr)
         {
-            thrive_x64_codegen_expression(b, curr);
-            thrive_x64_push_r(b, REG_RAX);
             arg_count++;
             curr = curr->next;
         }
 
-        reg_args = arg_count > 4 ? 4 : arg_count;
+        if (arg_count > 4)
+        {
+            extra_args = arg_count - 4;
+            for (i = 0; i < extra_args; ++i)
+            {
+                u32 target_idx = arg_count - 1 - i;
+                thrive_ast *arg_node = node->data.func_call.args;
+                u32 j;
 
-        for (i = reg_args; i > 0; --i)
+                for (j = 0; j < target_idx; ++j)
+                {
+                    arg_node = arg_node->next;
+                }
+
+                thrive_x64_codegen_expression(b, arg_node);
+                thrive_x64_push_r(b, REG_RAX);
+            }
+        }
+
+        reg_args_to_process = arg_count > 4 ? 4 : arg_count;
+        curr = node->data.func_call.args;
+        for (i = 0; i < reg_args_to_process; ++i)
+        {
+            thrive_x64_codegen_expression(b, curr);
+            thrive_x64_push_r(b, REG_RAX);
+            curr = curr->next;
+        }
+
+        for (i = reg_args_to_process; i > 0; --i)
         {
             thrive_x64_pop_r(b, arg_regs[i - 1]);
         }
 
-        thrive_x64_sub_rsp_imm32(b, 32); /* Shadow space */
+        thrive_x64_sub_rsp_imm32(b, 32);
 
         if (funcs[f_idx].is_external)
         {
