@@ -76,7 +76,11 @@ void reset_locals(void)
     var_count = 0;
     stack_offset = 0;
 }
-i32 new_label(void) { return label_id++; }
+
+i32 new_label(void)
+{
+    return label_id++;
+}
 
 void bind_label(thrive_buffer *b, i32 label)
 {
@@ -250,7 +254,9 @@ void gen_expr(thrive_buffer *b, thrive_ast *node)
         }
         case THRIVE_TOKEN_KIND_OR_LOGICAL:
         {
-            i32 l_true = new_label(), l_end = new_label();
+            i32 l_true = new_label();
+            i32 l_end = new_label();
+
             gen_expr(b, node->data.binary.left);
             thrive_x64_test_rr(b, REG_RAX, REG_RAX);
             thrive_buffer_write_u8(b, 0x0F);
@@ -839,6 +845,7 @@ int main(void)
         "\n"
         "s8 *text = \"Hello World from THRIVE!\\nIt works!\"\n"
         "s8 *text2 = \"arr[1] == 10\"\n"
+        "s8 *text3 = \"Goodbye\"\n"
         "s8 *caption = \"Win32 Success\"\n"
         "u32 arr[3]\n"
         "arr[0] = 5\n"
@@ -861,6 +868,7 @@ int main(void)
         "     break\n"
         "  }\n"
         "}\n"
+        "MessageBoxA(0 : text3 : caption : 0)\n"
         "ExitProcess(0)\n";
 
     /*
