@@ -5,7 +5,8 @@ ext u32 ExitProcess(u32 uExitCode)
 
 s8 *text = "Hello World from THRIVE!\nIt works!"
 s8 *text2 = "arr[1] == 10"
-s8 *text3 = "Goodbye"
+s8 *text3 = "Left Shift works"
+s8 *text4 = "Goodbye"
 s8 *caption = "Win32 Success"
 u32 arr[3]
 
@@ -30,5 +31,10 @@ for (i = 0 : i < (0x01 + 0b10) : ++i) {
      break
   }
 }
-MessageBoxA(0 : text3 : caption : 0)
+
+if (9 << 3 == 72) {
+   MessageBoxA(0 : text3 : caption : 0)
+} 
+
+MessageBoxA(0 : text4 : caption : 0)
 ExitProcess(0);

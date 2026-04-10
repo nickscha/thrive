@@ -481,6 +481,59 @@ THRIVE_API void win32_io_print_ms(void *hConsole, s8 *name, u32 name_length, f64
     }
 }
 
+THRIVE_API void thrive_win32_print(void *h_stdout, s8 *str)
+{
+    u32 len = 0;
+    u32 written;
+
+    if (!str)
+    {
+        return;
+    }
+
+    while (str[len])
+    {
+        len++;
+    }
+
+    WriteConsoleA(h_stdout, str, len, &written, 0);
+}
+
+THRIVE_API void thrive_win32_putc(void *h_stdout, s8 c)
+{
+    u32 written;
+    WriteConsoleA(h_stdout, &c, 1, &written, 0);
+}
+
+THRIVE_API void thrive_win32_print_u32(void *h_stdout, u32 val, u32 padding)
+{
+    s8 buffer[16];
+    i32 i = 15;
+    u32 len;
+    u32 written;
+    buffer[i--] = '\0';
+
+    if (val == 0)
+    {
+        buffer[i--] = '0';
+    }
+
+    while (val > 0 && i >= 0)
+    {
+        buffer[i--] = (s8)((val % 10) + '0');
+        val /= 10;
+    }
+
+    len = (u32)(14 - i);
+
+    while (len < padding)
+    {
+        thrive_win32_putc(h_stdout, ' ');
+        padding--;
+    }
+    WriteConsoleA(h_stdout, &buffer[i + 1], len, &written, 0);
+}
+
 /* ############################################################################
  * # Performance Metrics
  * ############################################################################
@@ -519,16 +572,62 @@ THRIVE_API void thrive_panic(thrive_status status)
 {
     if (status.type != THRIVE_STATUS_OK)
     {
-        u32 written = 0;
+        void *h_std = GetStdHandle(STD_OUTPUT_HANDLE);
+        s8 *p = status.line_start;
+        u32 i;
+        u32 offset;
+        u32 len;
 
-        void *hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+        SetConsoleTextAttribute(h_std, 12); /* red */
+        thrive_win32_print(h_std, "[error] ");
+        SetConsoleTextAttribute(h_std, 7);
+        thrive_win32_print(h_std, status.message);
+        thrive_win32_print(h_std, "\n");
 
-        SetConsoleTextAttribute(hConsole, 12);
-        WriteConsoleA(hConsole, "[thrive] ", 9, &written, 0);
-        SetConsoleTextAttribute(hConsole, 7);
+        thrive_win32_print(h_std, " --> input:");
+        thrive_win32_print_u32(h_std, status.line, 0);
+        thrive_win32_putc(h_std, ':');
+        thrive_win32_print_u32(h_std, status.column, 0);
+        thrive_win32_print(h_std, "\n    |\n");
 
-        WriteConsoleA(hConsole, status.message, thrive_string_length(status.message), &written, 0);
-        WriteConsoleA(hConsole, "\n", 1, &written, 0);
+        thrive_win32_print_u32(h_std, status.line, 3);
+        thrive_win32_print(h_std, " | ");
+
+        while (p && *p && *p != '\n' && *p != '\r')
+        {
+            thrive_win32_putc(h_std, *p);
+            p++;
+        }
+        thrive_win32_print(h_std, "\n    | ");
+
+        /* Underline logic */
+        offset = (u32)(status.token_start - status.line_start);
+
+        for (i = 0; i < offset; ++i)
+        {
+            thrive_win32_putc(h_std, ' ');
+        }
+
+        len = (u32)(status.token_end - status.token_start);
+
+        if (len == 0)
+        {
+            len = 1;
+        }
+
+        SetConsoleTextAttribute(h_std, 14); /* yellow */
+        thrive_win32_putc(h_std, '^');
+
+        for (i = 1; i < len; ++i)
+        {
+            thrive_win32_putc(h_std, '~');
+        }
+
+        thrive_win32_putc(h_std, ' ');
+        thrive_win32_print(h_std, status.message);
+        thrive_win32_print(h_std, "\n");
+
+        SetConsoleTextAttribute(h_std, 7);
 
         ExitProcess(1);
     }
