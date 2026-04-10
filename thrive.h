@@ -75,36 +75,26 @@ LICENSE
 /* Check if using C99 or later (inline is supported) */
 #if __STDC_VERSION__ >= 199901L
 #define THRIVE_INLINE inline
-#elif defined(__GNUC__) || defined(__clang__)
-#define THRIVE_INLINE __inline__
-#elif defined(_MSC_VER)
-#define THRIVE_INLINE __inline
-#else
-#define THRIVE_INLINE
-#endif
-
-#define THRIVE_API static
-
-/* #############################################################################
- * # [SECTION] 64 bit types
- * #############################################################################
- */
-#if __STDC_VERSION__ >= 199901L
 typedef long long i64;
 typedef unsigned long long u64;
 #elif defined(__GNUC__) || defined(__clang__)
+#define THRIVE_INLINE __inline__
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wlong-long"
 typedef long long i64;
 typedef unsigned long long u64;
 #pragma GCC diagnostic pop
 #elif defined(_MSC_VER)
+#define THRIVE_INLINE __inline
 typedef __int64 i64;
 typedef unsigned __int64 u64;
 #else
+#define THRIVE_INLINE
 typedef long i64;
 typedef unsigned long u64;
 #endif
+
+#define THRIVE_API static
 
 typedef char s8;
 typedef unsigned char u8;
@@ -940,21 +930,6 @@ THRIVE_API THRIVE_INLINE thrive_ast *thrive_ast_create(thrive_state *state, thri
     return node;
 }
 
-/*
-primary
-→ unary
-→ mul
-→ add
-→ comparison
-→ equality
-→ bitwise AND (&)
-→ bitwise OR (|)
-→ logical AND (&&)
-→ logical OR (||)
-→ ternary
-→ assign
-→ expr
-*/
 THRIVE_API thrive_ast *thrive_ast_parse_expression(thrive_state *state);
 
 THRIVE_API thrive_ast *thrive_ast_parse_primary(thrive_state *state)
