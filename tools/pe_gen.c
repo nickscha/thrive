@@ -1,4 +1,4 @@
-#include "thrive.h"
+#include "../thrive.h"
 #include "stdio.h"
 #include "stdlib.h"
 
