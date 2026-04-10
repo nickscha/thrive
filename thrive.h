@@ -2444,7 +2444,8 @@ THRIVE_API THRIVE_INLINE void thrive_x64_mov_r_mr(thrive_buffer *b, thrive_x64_r
 {
     thrive_x64_rex(b, 1, dst, base);
     thrive_buffer_write_u8(b, 0x8B);
-    thrive_x64_modrm_reg(b, dst, base);
+    /* Mod=00 (memory indirect). No displacement. */
+    thrive_buffer_write_u8(b, 0x00 | ((dst & 7) << 3) | (base & 7));
 }
 
 /* mov [rax], rbx */
@@ -2452,7 +2453,8 @@ THRIVE_API THRIVE_INLINE void thrive_x64_mov_mr_r(thrive_buffer *b, thrive_x64_r
 {
     thrive_x64_rex(b, 1, src, base);
     thrive_buffer_write_u8(b, 0x89);
-    thrive_x64_modrm_reg(b, src, base);
+    /* Mod=00 (memory indirect). No displacement. */
+    thrive_buffer_write_u8(b, 0x00 | ((src & 7) << 3) | (base & 7));
 }
 
 /* movzx rax, al */

@@ -4,16 +4,19 @@
 #include "stdlib.h"
 
 /* #############################################################################
- * # [SECTION] Codegen
+ * # [SECTION] Codegen x64 machine code
  * #############################################################################
  */
 #define THRIVE_MAX_VARS 256
+#define THRIVE_MAX_LABELS 1024
+#define THRIVE_MAX_FIXUPS 1024
+#define THRIVE_MAX_FUNCS 256
 
 typedef struct
 {
     s8 *start;
     u32 length;
-    i32 offset; /* stack offset (negative from rbp) */
+    i32 offset;
     u8 is_array;
 } thrive_var;
 
@@ -26,38 +29,94 @@ static i32 label_id = 0;
 static i32 current_break_label = -1;
 static i32 current_continue_label = -1;
 
+/* Fixup System */
+typedef enum
+{
+    FIXUP_JMP,
+    FIXUP_CALL_REL,
+    FIXUP_CALL_IAT,
+    FIXUP_STRING
+} fixup_type;
+
+typedef struct
+{
+    fixup_type type;
+    u32 buffer_offset;
+    u32 instr_end_offset;
+    i32 target_id;
+} thrive_fixup;
+
+static thrive_fixup fixups[THRIVE_MAX_FIXUPS];
+static u32 fixup_count = 0;
+static u32 label_offsets[THRIVE_MAX_LABELS];
+
 typedef struct
 {
     s8 *start;
     u32 length;
+    u32 offset; /* Buffer offset where string is stored */
 } thrive_string_data;
-
 static thrive_string_data string_pool[256];
 static u32 string_count = 0;
+
+typedef struct
+{
+    s8 *start;
+    u32 length;
+    u32 rva;
+    u8 is_external;
+    u32 ext_dll_index;
+    u32 ext_func_index;
+} thrive_func;
+static thrive_func funcs[THRIVE_MAX_FUNCS];
+static u32 func_count = 0;
 
 void reset_locals(void)
 {
     var_count = 0;
     stack_offset = 0;
 }
+i32 new_label(void) { return label_id++; }
 
-i32 new_label(void)
+void bind_label(thrive_buffer *b, i32 label)
 {
-    return label_id++;
+    label_offsets[label] = b->size;
+}
+
+void record_fixup(thrive_buffer *b, fixup_type type, i32 target_id)
+{
+    if (fixup_count < THRIVE_MAX_FIXUPS)
+    {
+        fixups[fixup_count].type = type;
+        fixups[fixup_count].buffer_offset = b->size;
+        fixups[fixup_count].instr_end_offset = b->size + 4;
+        fixups[fixup_count].target_id = target_id;
+        fixup_count++;
+    }
+    thrive_buffer_write_u32(b, 0); /* Dummy bytes to patch later */
+}
+
+i32 find_or_add_func(s8 *start, u32 length)
+{
+    u32 i;
+    for (i = 0; i < func_count; ++i)
+    {
+        if (funcs[i].length == length && thrive_string_equals(funcs[i].start, start, length))
+            return i;
+    }
+    funcs[func_count].start = start;
+    funcs[func_count].length = length;
+    return func_count++;
 }
 
 thrive_var *find_var(s8 *start, u32 length)
 {
     u32 i;
-
     for (i = 0; i < var_count; ++i)
     {
         if (vars[i].length == length && thrive_string_equals(vars[i].start, start, length))
-        {
             return &vars[i];
-        }
     }
-
     return 0;
 }
 
@@ -65,293 +124,209 @@ thrive_var *add_var(s8 *start, u32 length, u8 is_array, u32 array_size)
 {
     thrive_var *v = &vars[var_count++];
     u32 size = is_array ? array_size : 1;
-
-    stack_offset -= 8 * size; /* 8 bytes per stack slot */
-
+    stack_offset -= 8 * size;
     v->start = start;
     v->length = length;
     v->offset = stack_offset;
     v->is_array = is_array;
-
     return v;
 }
 
 void gen_expr(thrive_buffer *b, thrive_ast *node);
+void gen_stmt(thrive_buffer *b, thrive_ast *node);
 
 void gen_expr(thrive_buffer *b, thrive_ast *node)
 {
     switch (node->kind)
     {
     case THRIVE_AST_INT:
-        thrive_buffer_write_string(b, "    mov rax, ");
-        thrive_buffer_write_i32(b, (i32)node->data.int_value);
-        thrive_buffer_write_u8(b, '\n');
+        thrive_x64_mov_ri64(b, REG_RAX, node->data.int_value);
         break;
     case THRIVE_AST_NAME:
     {
         thrive_var *v = find_var(node->data.name.start, node->data.name.length);
-
         if (v->is_array)
         {
-            thrive_buffer_write_string(b, "    lea rax, [rbp");
+            thrive_x64_lea_r_mrbp(b, REG_RAX, v->offset);
         }
         else
         {
-            thrive_buffer_write_string(b, "    mov rax, [rbp");
+            thrive_x64_mov_r_mrbp(b, REG_RAX, v->offset);
         }
-
-        thrive_buffer_write_i32(b, v->offset);
-        thrive_buffer_write_string(b, "]\n");
-
         break;
     }
     case THRIVE_AST_ARRAY_ACCESS:
-    {
         gen_expr(b, node->data.array_access.index);
+        thrive_x64_mov_ri32(b, REG_RBX, 8);
+        thrive_x64_imul_rr(b, REG_RAX, REG_RBX); /* rax = index * 8 */
+        thrive_x64_push_r(b, REG_RAX);
 
-        thrive_buffer_write_string(b, "    imul rax, 8\n"); /* TODO: multiply index by slot size (8) */
-        thrive_buffer_write_string(b, "    push rax\n");
-
-        gen_expr(b, node->data.array_access.left); /* evaluate array pointer/name */
-
-        thrive_buffer_write_string(b, "    pop rbx\n");        /* pop offset */
-        thrive_buffer_write_string(b, "    add rax, rbx\n");   /* add offset to base pointer */
-        thrive_buffer_write_string(b, "    mov rax, [rax]\n"); /* dereference */
-
+        gen_expr(b, node->data.array_access.left);
+        thrive_x64_pop_r(b, REG_RBX);
+        thrive_x64_add_rr(b, REG_RAX, REG_RBX);   /* rax = base + offset */
+        thrive_x64_mov_r_mr(b, REG_RAX, REG_RAX); /* rax = [rax] */
         break;
-    }
     case THRIVE_AST_BINARY:
     {
         gen_expr(b, node->data.binary.left);
-
-        thrive_buffer_write_string(b, "    push rax\n");
-
+        thrive_x64_push_r(b, REG_RAX);
         gen_expr(b, node->data.binary.right);
-
-        thrive_buffer_write_string(b, "    pop rbx\n");
+        thrive_x64_pop_r(b, REG_RBX); /* RBX=left, RAX=right */
 
         switch (node->data.binary.op)
         {
         case THRIVE_TOKEN_KIND_ADD:
-            thrive_buffer_write_string(b, "    add rax, rbx\n");
+            thrive_x64_add_rr(b, REG_RAX, REG_RBX);
             break;
-
         case THRIVE_TOKEN_KIND_SUB:
-            thrive_buffer_write_string(b, "    sub rbx, rax\n");
-            thrive_buffer_write_string(b, "    mov rax, rbx\n");
+            thrive_x64_sub_rr(b, REG_RBX, REG_RAX);
+            thrive_x64_mov_rr(b, REG_RAX, REG_RBX);
             break;
-
         case THRIVE_TOKEN_KIND_MUL:
-            thrive_buffer_write_string(b, "    imul rax, rbx\n");
+            thrive_x64_imul_rr(b, REG_RAX, REG_RBX);
             break;
-
         case THRIVE_TOKEN_KIND_DIV:
-            thrive_buffer_write_string(b, "    xor rdx, rdx\n");
-            thrive_buffer_write_string(b, "    mov rcx, rax\n");
-            thrive_buffer_write_string(b, "    pop rax\n");
-            thrive_buffer_write_string(b, "    idiv rcx\n");
+            thrive_x64_xor_rr(b, REG_RDX, REG_RDX);
+            thrive_x64_mov_rr(b, REG_RCX, REG_RAX); /* RCX = right */
+            thrive_x64_mov_rr(b, REG_RAX, REG_RBX); /* RAX = left */
+            thrive_x64_idiv_r(b, REG_RCX);
             break;
-
         case THRIVE_TOKEN_KIND_LT:
-            thrive_buffer_write_string(b, "    cmp rbx, rax\n");
-            thrive_buffer_write_string(b, "    setl al\n");
-            thrive_buffer_write_string(b, "    movzx rax, al\n");
+            thrive_x64_cmp_rr(b, REG_RBX, REG_RAX);
+            thrive_x64_setcc(b, CC_L);
+            thrive_x64_movzx_rax_al(b);
             break;
-
         case THRIVE_TOKEN_KIND_GT:
-            thrive_buffer_write_string(b, "    cmp rbx, rax\n");
-            thrive_buffer_write_string(b, "    setg al\n");
-            thrive_buffer_write_string(b, "    movzx rax, al\n");
+            thrive_x64_cmp_rr(b, REG_RBX, REG_RAX);
+            thrive_x64_setcc(b, CC_G);
+            thrive_x64_movzx_rax_al(b);
             break;
-
         case THRIVE_TOKEN_KIND_LT_EQUALS:
-            thrive_buffer_write_string(b, "    cmp rbx, rax\n");
-            thrive_buffer_write_string(b, "    setle al\n");
-            thrive_buffer_write_string(b, "    movzx rax, al\n");
+            thrive_x64_cmp_rr(b, REG_RBX, REG_RAX);
+            thrive_x64_setcc(b, CC_LE);
+            thrive_x64_movzx_rax_al(b);
             break;
-
         case THRIVE_TOKEN_KIND_GT_EQUALS:
-            thrive_buffer_write_string(b, "    cmp rbx, rax\n");
-            thrive_buffer_write_string(b, "    setge al\n");
-            thrive_buffer_write_string(b, "    movzx rax, al\n");
+            thrive_x64_cmp_rr(b, REG_RBX, REG_RAX);
+            thrive_x64_setcc(b, CC_GE);
+            thrive_x64_movzx_rax_al(b);
             break;
-
         case THRIVE_TOKEN_KIND_EQUALS:
-            thrive_buffer_write_string(b, "    cmp rbx, rax\n");
-            thrive_buffer_write_string(b, "    sete al\n");
-            thrive_buffer_write_string(b, "    movzx rax, al\n");
+            thrive_x64_cmp_rr(b, REG_RBX, REG_RAX);
+            thrive_x64_setcc(b, CC_E);
+            thrive_x64_movzx_rax_al(b);
             break;
-
         case THRIVE_TOKEN_KIND_NOT_EQUALS:
-            thrive_buffer_write_string(b, "    cmp rbx, rax\n");
-            thrive_buffer_write_string(b, "    setne al\n");
-            thrive_buffer_write_string(b, "    movzx rax, al\n");
+            thrive_x64_cmp_rr(b, REG_RBX, REG_RAX);
+            thrive_x64_setcc(b, CC_NE);
+            thrive_x64_movzx_rax_al(b);
             break;
-
         case THRIVE_TOKEN_KIND_AND_BITWISE:
-            thrive_buffer_write_string(b, "    and rax, rbx\n");
+            thrive_x64_and_rr(b, REG_RAX, REG_RBX);
             break;
-
         case THRIVE_TOKEN_KIND_OR_BITWISE:
-            thrive_buffer_write_string(b, "    or rax, rbx\n");
+            thrive_x64_or_rr(b, REG_RAX, REG_RBX);
             break;
-
         case THRIVE_TOKEN_KIND_AND_LOGICAL:
         {
-            i32 l_false = new_label();
-            i32 l_end = new_label();
-
+            i32 l_false = new_label(), l_end = new_label();
             gen_expr(b, node->data.binary.left);
-            thrive_buffer_write_string(b, "    cmp rax, 0\n");
-            thrive_buffer_write_string(b, "    je .L");
-            thrive_buffer_write_i32(b, l_false);
-            thrive_buffer_write_string(b, "\n");
-
+            thrive_x64_test_rr(b, REG_RAX, REG_RAX);
+            thrive_buffer_write_u8(b, 0x0F);
+            thrive_buffer_write_u8(b, 0x80 | CC_E);
+            record_fixup(b, FIXUP_JMP, l_false);
             gen_expr(b, node->data.binary.right);
-            thrive_buffer_write_string(b, "    cmp rax, 0\n");
-            thrive_buffer_write_string(b, "    je .L");
-            thrive_buffer_write_i32(b, l_false);
-            thrive_buffer_write_string(b, "\n");
-
-            thrive_buffer_write_string(b, "    mov rax, 1\n");
-            thrive_buffer_write_string(b, "    jmp .L");
-            thrive_buffer_write_i32(b, l_end);
-            thrive_buffer_write_string(b, "\n");
-
-            thrive_buffer_write_string(b, ".L");
-            thrive_buffer_write_i32(b, l_false);
-            thrive_buffer_write_string(b, ":\n");
-            thrive_buffer_write_string(b, "    mov rax, 0\n");
-
-            thrive_buffer_write_string(b, ".L");
-            thrive_buffer_write_i32(b, l_end);
-            thrive_buffer_write_string(b, ":\n");
-
+            thrive_x64_test_rr(b, REG_RAX, REG_RAX);
+            thrive_buffer_write_u8(b, 0x0F);
+            thrive_buffer_write_u8(b, 0x80 | CC_E);
+            record_fixup(b, FIXUP_JMP, l_false);
+            thrive_x64_mov_ri64(b, REG_RAX, 1);
+            thrive_buffer_write_u8(b, 0xE9);
+            record_fixup(b, FIXUP_JMP, l_end);
+            bind_label(b, l_false);
+            thrive_x64_mov_ri64(b, REG_RAX, 0);
+            bind_label(b, l_end);
             break;
         }
-
         case THRIVE_TOKEN_KIND_OR_LOGICAL:
         {
-            i32 l_true = new_label();
-            i32 l_end = new_label();
-
+            i32 l_true = new_label(), l_end = new_label();
             gen_expr(b, node->data.binary.left);
-            thrive_buffer_write_string(b, "    cmp rax, 0\n");
-            thrive_buffer_write_string(b, "    jne .L");
-            thrive_buffer_write_i32(b, l_true);
-            thrive_buffer_write_string(b, "\n");
-
+            thrive_x64_test_rr(b, REG_RAX, REG_RAX);
+            thrive_buffer_write_u8(b, 0x0F);
+            thrive_buffer_write_u8(b, 0x80 | CC_NE);
+            record_fixup(b, FIXUP_JMP, l_true);
             gen_expr(b, node->data.binary.right);
-            thrive_buffer_write_string(b, "    cmp rax, 0\n");
-            thrive_buffer_write_string(b, "    jne .L");
-            thrive_buffer_write_i32(b, l_true);
-            thrive_buffer_write_string(b, "\n");
-
-            thrive_buffer_write_string(b, "    mov rax, 0\n");
-            thrive_buffer_write_string(b, "    jmp .L");
-            thrive_buffer_write_i32(b, l_end);
-            thrive_buffer_write_string(b, "\n");
-
-            thrive_buffer_write_string(b, ".L");
-            thrive_buffer_write_i32(b, l_true);
-            thrive_buffer_write_string(b, ":\n");
-
-            thrive_buffer_write_string(b, "    mov rax, 1\n");
-
-            thrive_buffer_write_string(b, ".L");
-            thrive_buffer_write_i32(b, l_end);
-            thrive_buffer_write_string(b, ":\n");
+            thrive_x64_test_rr(b, REG_RAX, REG_RAX);
+            thrive_buffer_write_u8(b, 0x0F);
+            thrive_buffer_write_u8(b, 0x80 | CC_NE);
+            record_fixup(b, FIXUP_JMP, l_true);
+            thrive_x64_mov_ri64(b, REG_RAX, 0);
+            thrive_buffer_write_u8(b, 0xE9);
+            record_fixup(b, FIXUP_JMP, l_end);
+            bind_label(b, l_true);
+            thrive_x64_mov_ri64(b, REG_RAX, 1);
+            bind_label(b, l_end);
             break;
         }
-
         default:
             break;
         }
         break;
     }
-
     case THRIVE_AST_UNARY:
     {
         if (node->data.unary.op == THRIVE_TOKEN_KIND_INC || node->data.unary.op == THRIVE_TOKEN_KIND_DEC)
         {
-            thrive_ast *name_node = node->data.unary.expr;
-            thrive_var *v = find_var(name_node->data.name.start, name_node->data.name.length);
-
+            thrive_var *v = find_var(node->data.unary.expr->data.name.start, node->data.unary.expr->data.name.length);
+            thrive_x64_mov_r_mrbp(b, REG_RAX, v->offset);
             if (node->data.unary.op == THRIVE_TOKEN_KIND_INC)
             {
-                thrive_buffer_write_string(b, "    inc qword [rbp");
+                thrive_x64_mov_ri32(b, REG_RBX, 1);
+                thrive_x64_add_rr(b, REG_RAX, REG_RBX);
             }
             else
             {
-                thrive_buffer_write_string(b, "    dec qword [rbp");
+                thrive_x64_mov_ri32(b, REG_RBX, 1);
+                thrive_x64_sub_rr(b, REG_RAX, REG_RBX);
             }
-
-            thrive_buffer_write_i32(b, v->offset);
-            thrive_buffer_write_string(b, "]\n");
-
-            thrive_buffer_write_string(b, "    mov rax, [rbp");
-            thrive_buffer_write_i32(b, v->offset);
-            thrive_buffer_write_string(b, "]\n");
+            thrive_x64_mov_mrbp_r(b, v->offset, REG_RAX);
         }
         else
         {
             gen_expr(b, node->data.unary.expr);
-
             switch (node->data.unary.op)
             {
             case THRIVE_TOKEN_KIND_SUB:
-                thrive_buffer_write_string(b, "    neg rax\n");
-                break;
-            case THRIVE_TOKEN_KIND_ADD:
-                /* no-op */
+                thrive_x64_neg_r(b, REG_RAX);
                 break;
             case THRIVE_TOKEN_KIND_NEGATE:
-                thrive_buffer_write_string(b, "    cmp rax, 0\n");
-                thrive_buffer_write_string(b, "    sete al\n");
-                thrive_buffer_write_string(b, "    movzx rax, al\n");
+                thrive_x64_test_rr(b, REG_RAX, REG_RAX);
+                thrive_x64_setcc(b, CC_E);
+                thrive_x64_movzx_rax_al(b);
                 break;
             default:
                 break;
             }
         }
-
         break;
     }
-
     case THRIVE_AST_TERNARY:
     {
-        i32 l_else = new_label();
-        i32 l_end = new_label();
-
-        /* evaluate condition */
+        i32 l_else = new_label(), l_end = new_label();
         gen_expr(b, node->data.ternary.cond);
-
-        thrive_buffer_write_string(b, "    cmp rax, 0\n");
-        thrive_buffer_write_string(b, "    je .L");
-        thrive_buffer_write_i32(b, l_else);
-        thrive_buffer_write_string(b, "\n");
-
-        /* then branch */
+        thrive_x64_test_rr(b, REG_RAX, REG_RAX);
+        thrive_buffer_write_u8(b, 0x0F);
+        thrive_buffer_write_u8(b, 0x80 | CC_E);
+        record_fixup(b, FIXUP_JMP, l_else);
         gen_expr(b, node->data.ternary.then_expr);
-
-        thrive_buffer_write_string(b, "    jmp .L");
-        thrive_buffer_write_i32(b, l_end);
-        thrive_buffer_write_string(b, "\n");
-
-        /* else branch */
-        thrive_buffer_write_string(b, ".L");
-        thrive_buffer_write_i32(b, l_else);
-        thrive_buffer_write_string(b, ":\n");
-
+        thrive_buffer_write_u8(b, 0xE9);
+        record_fixup(b, FIXUP_JMP, l_end);
+        bind_label(b, l_else);
         gen_expr(b, node->data.ternary.else_expr);
-
-        thrive_buffer_write_string(b, ".L");
-        thrive_buffer_write_i32(b, l_end);
-        thrive_buffer_write_string(b, ":\n");
-
+        bind_label(b, l_end);
         break;
     }
-
     case THRIVE_AST_ASSIGN:
     {
         thrive_ast *left = node->data.assign.left;
@@ -359,165 +334,113 @@ void gen_expr(thrive_buffer *b, thrive_ast *node)
 
         if (left->kind == THRIVE_AST_DEREF)
         {
-            /* Case: *p = 10 */
-            gen_expr(b, right);                                    /* rax = 10 */
-            thrive_buffer_write_string(b, "    push rax\n");       /* save 10 */
-            gen_expr(b, left->data.unary.expr);                    /* rax = address in p */
-            thrive_buffer_write_string(b, "    pop rbx\n");        /* rbx = 10 */
-            thrive_buffer_write_string(b, "    mov [rax], rbx\n"); /* store 10 at address in rax */
+            gen_expr(b, right);
+            thrive_x64_push_r(b, REG_RAX);
+            gen_expr(b, left->data.unary.expr);
+            thrive_x64_pop_r(b, REG_RBX);
+            thrive_x64_mov_mr_r(b, REG_RAX, REG_RBX);
         }
         else if (left->kind == THRIVE_AST_ARRAY_ACCESS)
         {
-            gen_expr(b, right);                              /* rax = value to store */
-            thrive_buffer_write_string(b, "    push rax\n"); /* save value */
-
-            gen_expr(b, left->data.array_access.index); /* calculate offset */
-            thrive_buffer_write_string(b, "    imul rax, 8\n");
-            thrive_buffer_write_string(b, "    push rax\n"); /* save offset */
-
-            gen_expr(b, left->data.array_access.left);           /* rax = base array pointer */
-            thrive_buffer_write_string(b, "    pop rbx\n");      /* rbx = offset */
-            thrive_buffer_write_string(b, "    add rax, rbx\n"); /* rax = target memory address */
-
-            thrive_buffer_write_string(b, "    pop rbx\n");        /* rbx = value to store */
-            thrive_buffer_write_string(b, "    mov [rax], rbx\n"); /* write to array! */
+            gen_expr(b, right);
+            thrive_x64_push_r(b, REG_RAX);
+            gen_expr(b, left->data.array_access.index);
+            thrive_x64_mov_ri32(b, REG_RBX, 8);
+            thrive_x64_imul_rr(b, REG_RAX, REG_RBX);
+            thrive_x64_push_r(b, REG_RAX);
+            gen_expr(b, left->data.array_access.left);
+            thrive_x64_pop_r(b, REG_RBX);
+            thrive_x64_add_rr(b, REG_RAX, REG_RBX);
+            thrive_x64_pop_r(b, REG_RBX);
+            thrive_x64_mov_mr_r(b, REG_RAX, REG_RBX);
         }
         else
         {
-            /* Case: i = 10 */
             gen_expr(b, right);
-
             thrive_var *v = find_var(left->data.name.start, left->data.name.length);
-
-            thrive_buffer_write_string(b, "    mov [rbp");
-            thrive_buffer_write_i32(b, v->offset);
-            thrive_buffer_write_string(b, "], rax\n");
+            thrive_x64_mov_mrbp_r(b, v->offset, REG_RAX);
         }
         break;
     }
-
     case THRIVE_AST_ADDR_OF:
     {
-        thrive_ast *target = node->data.unary.expr;
-        thrive_var *v = find_var(target->data.name.start, target->data.name.length);
-
-        thrive_buffer_write_string(b, "    lea rax, [rbp");
-        thrive_buffer_write_i32(b, v->offset);
-        thrive_buffer_write_string(b, "]\n");
-
+        thrive_var *v = find_var(node->data.unary.expr->data.name.start, node->data.unary.expr->data.name.length);
+        thrive_x64_lea_r_mrbp(b, REG_RAX, v->offset);
         break;
     }
-
     case THRIVE_AST_DEREF:
-    {
-        /* *ptr -> Treat the value in the variable as an address */
         gen_expr(b, node->data.unary.expr);
-
-        thrive_buffer_write_string(b, "    mov rax, [rax]\n");
+        thrive_x64_mov_r_mr(b, REG_RAX, REG_RAX);
         break;
-    }
-
     case THRIVE_AST_BREAK:
-    {
-        if (current_break_label == -1)
-        {
-            /* Error: Break used outside of loop */
-            return;
-        }
-
-        thrive_buffer_write_string(b, "    jmp .L");
-        thrive_buffer_write_i32(b, current_break_label);
-        thrive_buffer_write_string(b, "\n");
-
+        thrive_buffer_write_u8(b, 0xE9);
+        record_fixup(b, FIXUP_JMP, current_break_label);
         break;
-    }
-
     case THRIVE_AST_CONTINUE:
-    {
-        if (current_continue_label == -1)
-        {
-            /* Error: Continue used outside of loop */
-            return;
-        }
-
-        thrive_buffer_write_string(b, "    jmp .L");
-        thrive_buffer_write_i32(b, current_continue_label);
-        thrive_buffer_write_string(b, "\n");
-
+        thrive_buffer_write_u8(b, 0xE9);
+        record_fixup(b, FIXUP_JMP, current_continue_label);
         break;
-    }
-
     case THRIVE_AST_FUNC_CALL:
     {
         thrive_ast *curr = node->data.func_call.args;
-        s8 *arg_regs[] = {"rcx", "rdx", "r8", "r9"};
-        u32 arg_count = 0;
-        u32 i;
-        u32 reg_args;
-        u32 stack_cleanup;
+        thrive_x64_reg arg_regs[] = {REG_RCX, REG_RDX, REG_R8, REG_R9};
+        u32 arg_count = 0, i, stack_cleanup;
+        i32 f_idx = find_or_add_func(node->data.func_call.name->data.name.start, node->data.func_call.name->data.name.length);
 
         while (curr)
         {
             gen_expr(b, curr);
-
-            thrive_buffer_write_string(b, "    push rax\n");
-
+            thrive_x64_push_r(b, REG_RAX);
             arg_count++;
             curr = curr->next;
         }
 
-        reg_args = arg_count > 4 ? 4 : arg_count;
-
+        u32 reg_args = arg_count > 4 ? 4 : arg_count;
         for (i = reg_args; i > 0; --i)
         {
-            thrive_buffer_write_string(b, "    pop ");
-            thrive_buffer_write_string(b, arg_regs[i - 1]);
-            thrive_buffer_write_string(b, "\n");
+            thrive_x64_pop_r(b, arg_regs[i - 1]);
         }
 
-        thrive_buffer_write_string(b, "    sub rsp, 32\n");
+        thrive_x64_sub_rsp_imm32(b, 32); /* Shadow space */
 
-        thrive_buffer_write_string(b, "    call ");
-        thrive_buffer_write_string_length(b, node->data.func_call.name->data.name.length, node->data.func_call.name->data.name.start);
-        thrive_buffer_write_string(b, "\n");
+        if (funcs[f_idx].is_external)
+        {
+            thrive_buffer_write_u8(b, 0xFF);
+            thrive_buffer_write_u8(b, 0x15);
+            record_fixup(b, FIXUP_CALL_IAT, f_idx);
+        }
+        else
+        {
+            thrive_buffer_write_u8(b, 0xE8);
+            record_fixup(b, FIXUP_CALL_REL, f_idx);
+        }
 
         stack_cleanup = 32 + (arg_count > 4 ? (arg_count - 4) * 8 : 0);
-
-        thrive_buffer_write_string(b, "    add rsp, ");
-        thrive_buffer_write_i32(b, stack_cleanup);
-        thrive_buffer_write_string(b, "\n");
-
+        thrive_x64_add_rsp_imm32(b, stack_cleanup);
         break;
     }
-
     case THRIVE_AST_STRING:
     {
         u32 id = string_count++;
         string_pool[id].start = node->data.string_lit.start;
         string_pool[id].length = node->data.string_lit.length;
 
-        thrive_buffer_write_string(b, "    lea rax, [rel STR_");
-        thrive_buffer_write_i32(b, id);
-        thrive_buffer_write_string(b, "]\n");
-
+        thrive_x64_rex(b, 1, REG_RAX, 0);
+        thrive_buffer_write_u8(b, 0x8D); /* LEA RAX, [rel STR] */
+        thrive_buffer_write_u8(b, 0x05);
+        record_fixup(b, FIXUP_STRING, id);
         break;
     }
-
     case THRIVE_TOKEN_KIND_LSHIFT:
-    {
-        thrive_buffer_write_string(b, "    mov rcx, rax\n");
-        thrive_buffer_write_string(b, "    shl rbx, cl\n");
-        thrive_buffer_write_string(b, "    mov rax, rbx\n");
+        thrive_x64_mov_rr(b, REG_RCX, REG_RAX);
+        thrive_x64_shl_cl(b, REG_RBX);
+        thrive_x64_mov_rr(b, REG_RAX, REG_RBX);
         break;
-    }
     case THRIVE_TOKEN_KIND_RSHIFT:
-    {
-        thrive_buffer_write_string(b, "    mov rcx, rax\n");
-        thrive_buffer_write_string(b, "    shr rbx, cl\n");
-        thrive_buffer_write_string(b, "    mov rax, rbx\n");
+        thrive_x64_mov_rr(b, REG_RCX, REG_RAX);
+        thrive_x64_shr_cl(b, REG_RBX);
+        thrive_x64_mov_rr(b, REG_RAX, REG_RBX);
         break;
-    }
-
     default:
         break;
     }
@@ -530,118 +453,59 @@ void gen_stmt(thrive_buffer *b, thrive_ast *node)
     case THRIVE_AST_DECL:
     {
         thrive_ast *name = node->data.decl.name;
-        thrive_ast *value = node->data.decl.value;
-
-        thrive_var *v = add_var(name->data.name.start,
-                                name->data.name.length,
-                                node->data.decl.is_array,
-                                node->data.decl.array_size);
-
-        if (value)
+        thrive_var *v = add_var(name->data.name.start, name->data.name.length, node->data.decl.is_array, node->data.decl.array_size);
+        if (node->data.decl.value)
         {
-            gen_expr(b, value);
-
-            thrive_buffer_write_string(b, "    mov [rbp");
-            thrive_buffer_write_i32(b, v->offset);
-            thrive_buffer_write_string(b, "], rax\n");
+            gen_expr(b, node->data.decl.value);
+            thrive_x64_mov_mrbp_r(b, v->offset, REG_RAX);
         }
-
         break;
     }
-
     case THRIVE_AST_IF:
     {
-        int l_else = new_label();
-        int l_end = new_label();
-
-        /* condition */
+        i32 l_else = new_label(), l_end = new_label();
         gen_expr(b, node->data.if_stmt.cond);
+        thrive_x64_test_rr(b, REG_RAX, REG_RAX);
 
-        thrive_buffer_write_string(b, "    cmp rax, 0\n");
+        thrive_buffer_write_u8(b, 0x0F);
+        thrive_buffer_write_u8(b, 0x80 | CC_E);
+        record_fixup(b, FIXUP_JMP, node->data.if_stmt.else_branch ? l_else : l_end);
 
-        if (node->data.if_stmt.else_branch)
-        {
-            thrive_buffer_write_string(b, "    je .L");
-            thrive_buffer_write_i32(b, l_else);
-            thrive_buffer_write_string(b, "\n");
-        }
-        else
-        {
-            thrive_buffer_write_string(b, "    je .L");
-            thrive_buffer_write_i32(b, l_end);
-            thrive_buffer_write_string(b, "\n");
-        }
-
-        /* then */
         gen_stmt(b, node->data.if_stmt.then_branch);
 
         if (node->data.if_stmt.else_branch)
         {
-            thrive_buffer_write_string(b, "    jmp .L");
-            thrive_buffer_write_i32(b, l_end);
-            thrive_buffer_write_string(b, "\n");
-
-            thrive_buffer_write_string(b, ".L");
-            thrive_buffer_write_i32(b, l_else);
-            thrive_buffer_write_string(b, ":\n");
-
+            thrive_buffer_write_u8(b, 0xE9);
+            record_fixup(b, FIXUP_JMP, l_end);
+            bind_label(b, l_else);
             gen_stmt(b, node->data.if_stmt.else_branch);
         }
-
-        thrive_buffer_write_string(b, ".L");
-        thrive_buffer_write_i32(b, l_end);
-        thrive_buffer_write_string(b, ":\n");
-
+        bind_label(b, l_end);
         break;
     }
     case THRIVE_AST_FOR:
     {
-        i32 start_label = new_label();
-        i32 step_label = new_label();
-        i32 end_label = new_label();
-
-        /* Save parent loop context */
-        i32 old_break = current_break_label;
-        i32 old_continue = current_continue_label;
-
-        /* Set current loop context for children */
+        i32 start_label = new_label(), step_label = new_label(), end_label = new_label();
+        i32 old_break = current_break_label, old_continue = current_continue_label;
         current_break_label = end_label;
         current_continue_label = step_label;
 
-        /* 1. Init */
         gen_expr(b, node->data.for_loop.init);
-
-        thrive_buffer_write_string(b, ".L");
-        thrive_buffer_write_i32(b, start_label);
-        thrive_buffer_write_string(b, ":\n");
-
-        /* 2. Condition */
+        bind_label(b, start_label);
         gen_expr(b, node->data.for_loop.cond);
-        thrive_buffer_write_string(b, "    test rax, rax\n");
-        thrive_buffer_write_string(b, "    jz .L");
-        thrive_buffer_write_i32(b, end_label);
-        thrive_buffer_write_string(b, "\n");
+        thrive_x64_test_rr(b, REG_RAX, REG_RAX);
+        thrive_buffer_write_u8(b, 0x0F);
+        thrive_buffer_write_u8(b, 0x80 | CC_E);
+        record_fixup(b, FIXUP_JMP, end_label);
 
-        /* 3. Body */
         gen_stmt(b, node->data.for_loop.body);
 
-        /* 4. Step (Continue jumps here!) */
-        thrive_buffer_write_string(b, ".L");
-        thrive_buffer_write_i32(b, step_label);
-        thrive_buffer_write_string(b, ":\n");
-
+        bind_label(b, step_label);
         gen_expr(b, node->data.for_loop.step);
+        thrive_buffer_write_u8(b, 0xE9);
+        record_fixup(b, FIXUP_JMP, start_label);
+        bind_label(b, end_label);
 
-        thrive_buffer_write_string(b, "    jmp .L");
-        thrive_buffer_write_i32(b, start_label);
-        thrive_buffer_write_string(b, "\n");
-
-        /* 5. End (Break jumps here!) */
-        thrive_buffer_write_string(b, ".L");
-        thrive_buffer_write_i32(b, end_label);
-        thrive_buffer_write_string(b, ":\n");
-
-        /* Restore parent context */
         current_break_label = old_break;
         current_continue_label = old_continue;
         break;
@@ -656,472 +520,261 @@ void gen_stmt(thrive_buffer *b, thrive_ast *node)
         }
         break;
     }
-
     case THRIVE_AST_FUNC_DECL:
     {
         thrive_ast *curr = node->data.func_decl.params;
-        s8 *arg_regs[] = {"rcx", "rdx", "r8", "r9"};
+        thrive_x64_reg arg_regs[] = {REG_RCX, REG_RDX, REG_R8, REG_R9};
         u32 p_idx = 0;
 
-        thrive_buffer_write_string(b, "\n");
-        thrive_buffer_write_string_length(b, node->data.func_decl.name->data.name.length, node->data.func_decl.name->data.name.start);
-        thrive_buffer_write_string(b, ":\n");
+        i32 f_idx = find_or_add_func(node->data.func_decl.name->data.name.start, node->data.func_decl.name->data.name.length);
+        funcs[f_idx].rva = 0x1000 + b->size;
 
-        thrive_buffer_write_string(b, "    push rbp\n    mov rbp, rsp\n    sub rsp, 256\n");
+        thrive_x64_push_r(b, REG_RBP);
+        thrive_x64_mov_rr(b, REG_RBP, REG_RSP);
+        thrive_x64_sub_rsp_imm32(b, 256);
 
-        reset_locals();
+        u32 saved_var_count = var_count;
+        i32 saved_stack_offset = stack_offset;
+
+        stack_offset = 0;
+
         in_function = 1;
-
         while (curr && p_idx < 4)
         {
             thrive_var *v = add_var(curr->data.name.start, curr->data.name.length, 0, 0);
-
-            thrive_buffer_write_string(b, "    mov [rbp");
-            thrive_buffer_write_i32(b, v->offset);
-            thrive_buffer_write_string(b, "], ");
-            thrive_buffer_write_string(b, arg_regs[p_idx++]);
-            thrive_buffer_write_string(b, "\n");
-
+            thrive_x64_mov_mrbp_r(b, v->offset, arg_regs[p_idx++]);
             curr = curr->next;
         }
-        /* Note: Handle 5th+ params from [rbp + 16, 24, etc] if needed */
 
         gen_stmt(b, node->data.func_decl.body);
 
-        thrive_buffer_write_string(b, "    leave\n    ret\n");
+        thrive_x64_leave(b);
+        thrive_x64_ret(b);
 
+        var_count = saved_var_count;
+        stack_offset = saved_stack_offset;
         in_function = 0;
         break;
     }
     case THRIVE_AST_RETURN:
-    {
         gen_expr(b, node->data.ret.expr);
-
         if (in_function)
         {
-            thrive_buffer_write_string(b, "    leave\n");
-            thrive_buffer_write_string(b, "    ret\n");
+            thrive_x64_leave(b);
+            thrive_x64_ret(b);
         }
         else
         {
-            thrive_buffer_write_string(b, "    mov rcx, rax\n");
-            thrive_buffer_write_string(b, "    call ExitProcess\n");
+            /* If we are at the top-level scope, default behaviour: ExitProcess */
+            thrive_x64_mov_rr(b, REG_RCX, REG_RAX);
+            i32 exit_idx = find_or_add_func((s8 *)"ExitProcess", 11);
+            funcs[exit_idx].is_external = 1; /* Best effort fallback */
+            thrive_x64_sub_rsp_imm32(b, 32);
+            thrive_buffer_write_u8(b, 0xFF);
+            thrive_buffer_write_u8(b, 0x15);
+            record_fixup(b, FIXUP_CALL_IAT, exit_idx);
+            thrive_x64_add_rsp_imm32(b, 32);
         }
         break;
-    }
-
-    case THRIVE_AST_EXT_DECL:
-    {
-        /* Do nothing here; handled in the top-level pass */
-        break;
-    }
-
     default:
         gen_expr(b, node);
         break;
     }
 }
 
-void gen_program(thrive_buffer *b, thrive_ast *node)
+/* Hardcoded mapping for demonstration */
+static s8 *kUser32 = "user32.dll";
+static s8 *kKernel32 = "kernel32.dll";
+static s8 *user32_funcs[32];
+static s8 *kernel32_funcs[32];
+static u32 u32_fc = 0, k32_fc = 0;
+static s8 import_name_pool[1024];
+static u32 import_name_pool_offset = 0;
+
+void gen_program(thrive_buffer *code_b, thrive_ast *node, thrive_buffer *exe_out)
 {
     thrive_ast *curr;
     u32 i;
+    thrive_p32_plus_import imports[2];
+    u32 num_imports = 0;
 
-    thrive_buffer_write_string(b, "default rel\n");
+    func_count = 0;
+    fixup_count = 0;
+    string_count = 0;
 
-    /* Pass 1: Find and print all external declarations at the top */
+    /* Pass 1: Collect External Decl */
+    import_name_pool_offset = 0; /* Reset pool for fresh generations */
+
     curr = node->data.block.body;
     while (curr)
     {
         if (curr->kind == THRIVE_AST_EXT_DECL)
         {
-            thrive_buffer_write_string(b, "extern ");
-            thrive_buffer_write_string_length(
-                b,
-                curr->data.ext_decl.name->data.name.length,
-                curr->data.ext_decl.name->data.name.start);
-            thrive_buffer_write_string(b, "\n");
+            i32 f_idx = find_or_add_func(curr->data.ext_decl.name->data.name.start, curr->data.ext_decl.name->data.name.length);
+            funcs[f_idx].is_external = 1;
+
+            /* Extract and NULL-terminate the function name for the PE Importer */
+            u32 len = funcs[f_idx].length;
+            s8 *null_terminated_name = &import_name_pool[import_name_pool_offset];
+            u32 j;
+
+            for (j = 0; j < len; ++j)
+            {
+                null_terminated_name[j] = funcs[f_idx].start[j];
+            }
+            null_terminated_name[len] = '\0';
+            import_name_pool_offset += len + 1;
+
+            /* Use the null-terminated version for the imports table */
+            if (null_terminated_name[0] == 'M' && null_terminated_name[1] == 'e' && null_terminated_name[2] == 's')
+            { /* MessageBoxA */
+                funcs[f_idx].ext_dll_index = 0;
+                funcs[f_idx].ext_func_index = u32_fc;
+                user32_funcs[u32_fc++] = (char *)null_terminated_name;
+            }
+            else
+            {
+                funcs[f_idx].ext_dll_index = 1;
+                funcs[f_idx].ext_func_index = k32_fc;
+                kernel32_funcs[k32_fc++] = (char *)null_terminated_name;
+            }
         }
         curr = curr->next;
     }
 
-    thrive_buffer_write_string(b, "\nsection .text\n");
-    thrive_buffer_write_string(b, "global main\n\n");
-    thrive_buffer_write_string(b, "main:\n");
-    thrive_buffer_write_string(b, "    push rbp\n");
-    thrive_buffer_write_string(b, "    mov rbp, rsp\n");
-    thrive_buffer_write_string(b, "    sub rsp, 256\n");
+    if (u32_fc > 0)
+    {
+        imports[num_imports].library = kUser32;
+        imports[num_imports].imports = user32_funcs;
+        imports[num_imports].imports_count = u32_fc;
+        /* Re-map dll indices */
+        for (i = 0; i < func_count; ++i)
+        {
+            if (funcs[i].is_external && funcs[i].ext_dll_index == 0)
+                funcs[i].ext_dll_index = num_imports;
+        }
+        num_imports++;
+    }
+    if (k32_fc > 0)
+    {
+        imports[num_imports].library = kKernel32;
+        imports[num_imports].imports = kernel32_funcs;
+        imports[num_imports].imports_count = k32_fc;
+        for (i = 0; i < func_count; ++i)
+        {
+            if (funcs[i].is_external && funcs[i].ext_dll_index == 1)
+                funcs[i].ext_dll_index = num_imports;
+        }
+        num_imports++;
+    }
 
+    /* Pass 2: Main Logic */
     reset_locals();
+    thrive_x64_push_r(code_b, REG_RBP);
+    thrive_x64_mov_rr(code_b, REG_RBP, REG_RSP);
+    thrive_x64_sub_rsp_imm32(code_b, 256);
 
-    /* Pass 2: Main logic (Skip FUNC_DECL and EXT_DECL) */
     curr = node->data.block.body;
     while (curr)
     {
         if (curr->kind != THRIVE_AST_FUNC_DECL && curr->kind != THRIVE_AST_EXT_DECL)
-        {
-            gen_stmt(b, curr);
-        }
+            gen_stmt(code_b, curr);
         curr = curr->next;
     }
+    thrive_x64_leave(code_b);
+    thrive_x64_ret(code_b);
 
-    /* Pass 3: Internal Function Definitions */
+    /* Pass 3: Internal Functions */
     curr = node->data.block.body;
     while (curr)
     {
         if (curr->kind == THRIVE_AST_FUNC_DECL)
-        {
-            gen_stmt(b, curr);
-        }
+            gen_stmt(code_b, curr);
         curr = curr->next;
     }
 
-    /* Emit Data Section for Strings */
-    if (string_count > 0)
+    /* Pass 4: Embed Strings into Text Section */
+    for (i = 0; i < string_count; ++i)
     {
-        thrive_buffer_write_string(b, "\nsection .data\n");
-
-        for (i = 0; i < string_count; ++i)
+        u32 j;
+        string_pool[i].offset = code_b->size;
+        for (j = 0; j < string_pool[i].length; ++j)
         {
-            u32 j;
-
-            thrive_buffer_write_string(b, "STR_");
-            thrive_buffer_write_i32(b, i);
-            thrive_buffer_write_string(b, ": db ");
-
-            for (j = 0; j < string_pool[i].length; ++j)
+            if (string_pool[i].start[j] == '\\' && j + 1 < string_pool[i].length)
             {
-                if (string_pool[i].start[j] == '\\' && j + 1 < string_pool[i].length)
+                j++;
+                switch (string_pool[i].start[j])
                 {
-                    j++;
-                    switch (string_pool[i].start[j])
-                    {
-                    case 'n':
-                        thrive_buffer_write_string(b, "10, ");
-                        break;
-                    case 'r':
-                        thrive_buffer_write_string(b, "13, ");
-                        break;
-                    case 't':
-                        thrive_buffer_write_string(b, "9, ");
-                        break;
-                    case '0':
-                        thrive_buffer_write_string(b, "0, ");
-                        break;
-                    default:
-                        thrive_buffer_write_i32(b, string_pool[i].start[j]);
-                        thrive_buffer_write_string(b, ", ");
-                        break;
-                    }
-                }
-                else
-                {
-                    thrive_buffer_write_i32(b, string_pool[i].start[j]);
-                    thrive_buffer_write_string(b, ", ");
+                case 'n':
+                    thrive_buffer_write_u8(code_b, 10);
+                    break;
+                case 'r':
+                    thrive_buffer_write_u8(code_b, 13);
+                    break;
+                case 't':
+                    thrive_buffer_write_u8(code_b, 9);
+                    break;
+                case '0':
+                    thrive_buffer_write_u8(code_b, 0);
+                    break;
+                default:
+                    thrive_buffer_write_u8(code_b, string_pool[i].start[j]);
+                    break;
                 }
             }
-
-            thrive_buffer_write_string(b, "0\n"); /* Null terminator */
-        }
-    }
-}
-
-/* #############################################################################
- * # [SECTION] Print helpers
- * #############################################################################
- */
-void print_token(thrive_token token)
-{
-
-    if (token.kind > THRIVE_TOKEN_KIND_INVALID)
-    {
-        printf("[UNKOWN]  %.*s [kind: %d]\n", token.end - token.start, token.start, token.kind);
-    }
-
-    printf("[%3d:%3d] ", token.line, token.column);
-
-    switch (token.kind)
-    {
-    case THRIVE_TOKEN_KIND_EOF:
-        printf("%-12s", "EOF");
-        break;
-    case THRIVE_TOKEN_KIND_NEW_LINE:
-        printf("%-12s", "NEWLINE");
-        break;
-    case THRIVE_TOKEN_KIND_INT:
-        printf("%-12s| %d", "INT", token.value.number);
-        break;
-    default:
-        printf("%-12s| %.*s", thrive_token_kind_names[token.kind], token.end - token.start, token.start);
-        break;
-    }
-
-    printf("\n");
-}
-
-THRIVE_API void thrive_print_indent(u32 depth)
-{
-    u32 i;
-    for (i = 0; i < depth; ++i)
-    {
-        printf("  ");
-    }
-}
-
-THRIVE_API void thrive_ast_print(thrive_ast *node, u32 depth)
-{
-    if (!node)
-    {
-        thrive_print_indent(depth);
-        printf("(null)\n");
-        return;
-    }
-
-    thrive_print_indent(depth);
-
-    switch (node->kind)
-    {
-    case THRIVE_AST_INT:
-        printf("INT %u\n", node->data.int_value);
-        break;
-
-    case THRIVE_AST_NAME:
-        printf("NAME %.*s\n", node->data.name.length, node->data.name.start);
-        break;
-
-    case THRIVE_AST_STRING:
-    {
-        printf("STRING \"%.*s\"\n",
-               node->data.string_lit.length,
-               node->data.string_lit.start);
-        break;
-    }
-
-    case THRIVE_AST_BINARY:
-        printf("BINARY %s\n", thrive_token_kind_names[node->data.binary.op]);
-
-        thrive_ast_print(node->data.binary.left, depth + 1);
-        thrive_ast_print(node->data.binary.right, depth + 1);
-        break;
-
-    case THRIVE_AST_UNARY:
-    {
-        if (node->data.unary.op == THRIVE_TOKEN_KIND_INC)
-        {
-            printf("POST_INC\n");
-            thrive_ast_print(node->data.unary.expr, depth + 1);
-        }
-        else if (node->data.unary.op == THRIVE_TOKEN_KIND_DEC)
-        {
-            printf("POST_DEC\n");
-            thrive_ast_print(node->data.unary.expr, depth + 1);
-        }
-        else
-        {
-            printf("UNARY %s\n", thrive_token_kind_names[node->data.unary.op]);
-            thrive_ast_print(node->data.unary.expr, depth + 1);
-        }
-        break;
-    }
-
-    case THRIVE_AST_TERNARY:
-        printf("TERNARY\n");
-
-        thrive_ast_print(node->data.ternary.cond, depth + 1);
-        thrive_ast_print(node->data.ternary.then_expr, depth + 1);
-        thrive_ast_print(node->data.ternary.else_expr, depth + 1);
-        break;
-
-    case THRIVE_AST_IF:
-    {
-        printf("IF\n");
-
-        thrive_print_indent(depth + 1);
-        printf("COND\n");
-        thrive_ast_print(node->data.if_stmt.cond, depth + 2);
-
-        thrive_print_indent(depth + 1);
-        printf("THEN\n");
-        thrive_ast_print(node->data.if_stmt.then_branch, depth + 2);
-
-        if (node->data.if_stmt.else_branch)
-        {
-            thrive_print_indent(depth + 1);
-            printf("ELSE\n");
-            thrive_ast_print(node->data.if_stmt.else_branch, depth + 2);
-        }
-
-        break;
-    }
-
-    case THRIVE_AST_FOR:
-    {
-        printf("FOR\n");
-
-        thrive_print_indent(depth + 1);
-        printf("INIT\n");
-        thrive_ast_print(node->data.for_loop.init, depth + 2);
-
-        thrive_print_indent(depth + 1);
-        printf("COND\n");
-        thrive_ast_print(node->data.for_loop.cond, depth + 2);
-
-        thrive_print_indent(depth + 1);
-        printf("STEP\n");
-        thrive_ast_print(node->data.for_loop.step, depth + 2);
-
-        thrive_print_indent(depth + 1);
-        printf("BODY\n");
-        thrive_ast_print(node->data.for_loop.body, depth + 2);
-        break;
-    }
-
-    case THRIVE_AST_ADDR_OF:
-        printf("ADDRESS_OF (&)\n");
-        thrive_ast_print(node->data.unary.expr, depth + 1);
-        break;
-
-    case THRIVE_AST_DEREF:
-        printf("DEREFERENCE (*)\n");
-        thrive_ast_print(node->data.unary.expr, depth + 1);
-        break;
-
-    case THRIVE_AST_RETURN:
-        printf("RETURN\n");
-        thrive_ast_print(node->data.ret.expr, depth + 1);
-        break;
-
-    case THRIVE_AST_BREAK:
-        printf("BREAK\n");
-        break;
-
-    case THRIVE_AST_CONTINUE:
-        printf("CONTINUE\n");
-        break;
-
-    case THRIVE_AST_ASSIGN:
-        printf("ASSIGN\n");
-        thrive_ast_print(node->data.assign.left, depth + 1);
-        thrive_ast_print(node->data.assign.right, depth + 1);
-        break;
-
-    case THRIVE_AST_DECL:
-    {
-        if (node->data.decl.is_array)
-        {
-            printf("DECL ARRAY [size: %u]\n", node->data.decl.array_size);
-        }
-        else
-        {
-            printf("DECL\n");
-        }
-
-        thrive_ast_print(node->data.decl.name, depth + 1);
-
-        if (node->data.decl.value)
-        {
-            thrive_ast_print(node->data.decl.value, depth + 1);
-        }
-        break;
-    }
-
-    case THRIVE_AST_BLOCK:
-    {
-        thrive_ast *curr = node->data.block.body;
-        printf("BLOCK\n");
-        while (curr)
-        {
-            thrive_ast_print(curr, depth + 1);
-            curr = curr->next;
-        }
-        break;
-    }
-
-    case THRIVE_AST_FUNC_DECL:
-    {
-        thrive_ast *curr;
-        printf("FUNC_DECL %.*s\n",
-               node->data.func_decl.name->data.name.length,
-               node->data.func_decl.name->data.name.start);
-
-        curr = node->data.func_decl.params;
-        if (curr)
-        {
-            thrive_print_indent(depth + 1);
-            printf("PARAMS:\n");
-            while (curr)
+            else
             {
-                thrive_ast_print(curr, depth + 2);
-                curr = curr->next;
+                thrive_buffer_write_u8(code_b, string_pool[i].start[j]);
             }
         }
-
-        thrive_print_indent(depth + 1);
-        printf("BODY:\n");
-        thrive_ast_print(node->data.func_decl.body, depth + 2);
-        break;
+        thrive_buffer_write_u8(code_b, 0); /* Null Terminator */
     }
 
-    case THRIVE_AST_FUNC_CALL:
+    /* Recalculate IAT RVAs dynamically based on final text size */
+    for (i = 0; i < func_count; ++i)
     {
-        thrive_ast *curr = node->data.func_call.args;
-        printf("FUNC_CALL %.*s\n",
-               node->data.func_call.name->data.name.length,
-               node->data.func_call.name->data.name.start);
-
-        if (curr)
+        if (funcs[i].is_external)
         {
-            thrive_print_indent(depth + 1);
-            printf("ARGS:\n");
-            while (curr)
-            {
-                thrive_ast_print(curr, depth + 2);
-                curr = curr->next;
-            }
+            funcs[i].rva = thrive_pe32_plus_get_iat_rva(imports, num_imports, code_b->size, funcs[i].ext_dll_index, funcs[i].ext_func_index);
         }
-        break;
     }
 
-    case THRIVE_AST_EXT_DECL:
+    /* Pass 5: Apply Fixups */
+    u32 text_rva = 0x1000;
+    for (i = 0; i < fixup_count; ++i)
     {
-        thrive_ast *curr = node->data.ext_decl.params;
+        thrive_fixup *f = &fixups[i];
+        i32 rel = 0;
 
-        printf("EXT_DECL %.*s\n",
-               node->data.ext_decl.name->data.name.length,
-               node->data.ext_decl.name->data.name.start);
-
-        if (curr)
+        if (f->type == FIXUP_JMP)
         {
-            thrive_print_indent(depth + 1);
-            printf("PARAMS:\n");
-            while (curr)
-            {
-                thrive_ast_print(curr, depth + 2);
-                curr = curr->next;
-            }
+            rel = (i32)label_offsets[f->target_id] - (i32)f->instr_end_offset;
         }
-        break;
+        else if (f->type == FIXUP_CALL_REL)
+        {
+            u32 internal_target_offset = funcs[f->target_id].rva - text_rva;
+            rel = (i32)internal_target_offset - (i32)f->instr_end_offset;
+        }
+        else if (f->type == FIXUP_CALL_IAT)
+        {
+            u32 target_rva = funcs[f->target_id].rva;
+            u32 curr_rva = text_rva + f->instr_end_offset;
+            rel = (i32)target_rva - (i32)curr_rva;
+        }
+        else if (f->type == FIXUP_STRING)
+        {
+            rel = (i32)string_pool[f->target_id].offset - (i32)f->instr_end_offset;
+        }
+
+        u32 *patch_ptr = (u32 *)(code_b->data + f->buffer_offset);
+        *patch_ptr = (u32)rel;
     }
 
-    case THRIVE_AST_ARRAY_ACCESS:
-    {
-        printf("ARRAY_ACCESS\n");
-
-        thrive_print_indent(depth + 1);
-        printf("BASE:\n");
-        thrive_ast_print(node->data.array_access.left, depth + 2);
-
-        thrive_print_indent(depth + 1);
-        printf("INDEX:\n");
-        thrive_ast_print(node->data.array_access.index, depth + 2);
-        break;
-    }
-
-    default:
-        printf("UNKNOWN AST\n");
-        break;
-    }
+    /* Finally, emit executable via your PE32+ generator */
+    thrive_pe32_plus_generate(exe_out, code_b, imports, num_imports, code_b->size);
 }
+
+#include "thrive_ast_print.h"
 
 /* #############################################################################
  * # [SECTION] Testing
@@ -1194,7 +847,7 @@ int main(void)
         "u32 *ptr = arr\n"
         "\n"
         "u32 add(u32 a : u32 b) {\n"
-        " a + b\n"
+        " ret a + b\n"
         "}\n"
         "\n"
         "u32 i = 0\n"
@@ -1333,23 +986,25 @@ int main(void)
         /* Codegen */
         printf("--------------------\n");
         {
-            u8 nasm_data[8192];
-            thrive_buffer asm_buffer = {0};
-            asm_buffer.data = nasm_data;
-            asm_buffer.capacity = 8192;
+            u8 x64_data[8192];
+            thrive_buffer code_buffer = {0};
+            code_buffer.data = x64_data;
+            code_buffer.capacity = 8192;
 
-            gen_program(&asm_buffer, ast);
+            u8 pe_data[16384];
+            thrive_buffer exe_buffer = {0};
+            exe_buffer.data = pe_data;
+            exe_buffer.capacity = 16384;
 
-            /*printf("%.*s", asm_buffer.size, asm_buffer.data); */
+            gen_program(&code_buffer, ast, &exe_buffer);
 
-            /* Output */
-            FILE *f = fopen("test.asm", "wb");
-
+            /* Output Executable */
+            FILE *f = fopen("test.exe", "wb");
             if (f)
             {
-                fwrite(asm_buffer.data, 1, asm_buffer.size, f);
+                fwrite(exe_buffer.data, 1, exe_buffer.size, f);
                 fclose(f);
-                printf("[thrive] generated: test.asm (%u bytes).\n", asm_buffer.size);
+                printf("[thrive] generated: test.exe (%u bytes).\n", exe_buffer.size);
             }
         }
 
