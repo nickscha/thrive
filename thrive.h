@@ -1918,7 +1918,7 @@ THRIVE_API THRIVE_INLINE void thrive_buffer_write_u8(thrive_buffer *b, u8 value)
     {
         thrive_status status = {0};
         status.type = THRIVE_STATUS_ERROR_MEMORY;
-        status.message = "Buffer memory overflow!";
+        status.message = "Buffer memory overflow!\n";
 
         thrive_panic(status);
     }
@@ -2667,6 +2667,821 @@ THRIVE_API THRIVE_INLINE void thrive_x64_inst_call_rel32(thrive_buffer *b, u32 c
     thrive_buffer_write_u8(b, 0xFF); /* CALL */
     thrive_buffer_write_u8(b, 0x15); /* ModR/M: rel32 */
     thrive_buffer_write_u32(b, rel);
+}
+
+/* #############################################################################
+ * # [SECTION] X86_64 PE32+ Codegen
+ * #############################################################################
+ */
+#define THRIVE_MAX_VARS 256
+#define THRIVE_MAX_LABELS 1024
+#define THRIVE_MAX_FIXUPS 1024
+#define THRIVE_MAX_FUNCS 256
+
+typedef struct thrive_var
+{
+    s8 *start;
+    u32 length;
+    i32 offset;
+    u8 is_array;
+} thrive_var;
+
+typedef enum fixup_type
+{
+    FIXUP_JMP,
+    FIXUP_CALL_REL,
+    FIXUP_CALL_IAT,
+    FIXUP_STRING
+} fixup_type;
+
+typedef struct thrive_fixup
+{
+    fixup_type type;
+    u32 buffer_offset;
+    u32 instr_end_offset;
+    i32 target_id;
+} thrive_fixup;
+
+typedef struct thrive_string_data
+{
+    s8 *start;
+    u32 length;
+    u32 offset; /* Buffer offset where string is stored */
+} thrive_string_data;
+
+typedef struct thrive_func
+{
+    s8 *start;
+    u32 length;
+    u32 rva;
+    u8 is_external;
+    u32 ext_dll_index;
+    u32 ext_func_index;
+} thrive_func;
+
+static thrive_var vars[THRIVE_MAX_VARS];
+static u32 var_count = 0;
+static i32 stack_offset = 0;
+static i32 in_function = 0;
+static i32 label_id = 0;
+static i32 current_break_label = -1;
+static i32 current_continue_label = -1;
+static thrive_fixup fixups[THRIVE_MAX_FIXUPS];
+static u32 fixup_count = 0;
+static u32 label_offsets[THRIVE_MAX_LABELS];
+static thrive_string_data string_pool[256];
+static u32 string_count = 0;
+static thrive_func funcs[THRIVE_MAX_FUNCS];
+static u32 func_count = 0;
+
+/* Hardcoded mapping for demonstration */
+static s8 *kUser32 = "user32.dll";
+static s8 *kKernel32 = "kernel32.dll";
+static s8 *user32_funcs[32];
+static s8 *kernel32_funcs[32];
+static u32 u32_fc = 0, k32_fc = 0;
+static s8 import_name_pool[1024];
+static u32 import_name_pool_offset = 0;
+
+THRIVE_API THRIVE_INLINE void thrive_x64_codegen_reset_locals(void)
+{
+    var_count = 0;
+    stack_offset = 0;
+}
+
+THRIVE_API THRIVE_INLINE i32 thrive_x64_codegen_new_label(void)
+{
+    return label_id++;
+}
+
+THRIVE_API THRIVE_INLINE void thrive_x64_codegen_bind_label(thrive_buffer *b, i32 label)
+{
+    label_offsets[label] = b->size;
+}
+
+THRIVE_API void thrive_x64_codegen_record_fixup(thrive_buffer *b, fixup_type type, i32 target_id)
+{
+    if (fixup_count < THRIVE_MAX_FIXUPS)
+    {
+        fixups[fixup_count].type = type;
+        fixups[fixup_count].buffer_offset = b->size;
+        fixups[fixup_count].instr_end_offset = b->size + 4;
+        fixups[fixup_count].target_id = target_id;
+        fixup_count++;
+    }
+    thrive_buffer_write_u32(b, 0); /* Dummy bytes to patch later */
+}
+
+THRIVE_API i32 thrive_x64_codegen_find_or_add_func(s8 *start, u32 length)
+{
+    u32 i;
+
+    for (i = 0; i < func_count; ++i)
+    {
+        if (funcs[i].length == length && thrive_string_equals(funcs[i].start, start, length))
+        {
+            return (i32)i;
+        }
+    }
+
+    funcs[func_count].start = start;
+    funcs[func_count].length = length;
+
+    return (i32)func_count++;
+}
+
+THRIVE_API thrive_var *thrive_x64_codegen_find_var(s8 *start, u32 length)
+{
+    u32 i;
+
+    for (i = 0; i < var_count; ++i)
+    {
+        if (vars[i].length == length && thrive_string_equals(vars[i].start, start, length))
+        {
+            return &vars[i];
+        }
+    }
+
+    return 0;
+}
+
+THRIVE_API thrive_var *thrive_x64_codegen_add_var(s8 *start, u32 length, u8 is_array, u32 array_size)
+{
+    thrive_var *v = &vars[var_count++];
+    u32 size = is_array ? array_size : 1;
+    stack_offset -= (i32)(8 * size);
+    v->start = start;
+    v->length = length;
+    v->offset = stack_offset;
+    v->is_array = is_array;
+    return v;
+}
+
+THRIVE_API void thrive_x64_codegen_expression(thrive_buffer *b, thrive_ast *node);
+THRIVE_API void thrive_x64_codegen_statement(thrive_buffer *b, thrive_ast *node);
+
+THRIVE_API void thrive_x64_codegen_expression(thrive_buffer *b, thrive_ast *node)
+{
+    switch (node->kind)
+    {
+    case THRIVE_AST_INT:
+        thrive_x64_mov_ri64(b, REG_RAX, node->data.int_value);
+        break;
+    case THRIVE_AST_NAME:
+    {
+        thrive_var *v = thrive_x64_codegen_find_var(node->data.name.start, node->data.name.length);
+        if (v->is_array)
+        {
+            thrive_x64_lea_r_mrbp(b, REG_RAX, v->offset);
+        }
+        else
+        {
+            thrive_x64_mov_r_mrbp(b, REG_RAX, v->offset);
+        }
+        break;
+    }
+    case THRIVE_AST_ARRAY_ACCESS:
+        thrive_x64_codegen_expression(b, node->data.array_access.index);
+        thrive_x64_mov_ri32(b, REG_RBX, 8);
+        thrive_x64_imul_rr(b, REG_RAX, REG_RBX); /* rax = index * 8 */
+        thrive_x64_push_r(b, REG_RAX);
+
+        thrive_x64_codegen_expression(b, node->data.array_access.left);
+        thrive_x64_pop_r(b, REG_RBX);
+        thrive_x64_add_rr(b, REG_RAX, REG_RBX);   /* rax = base + offset */
+        thrive_x64_mov_r_mr(b, REG_RAX, REG_RAX); /* rax = [rax] */
+        break;
+    case THRIVE_AST_BINARY:
+    {
+        thrive_x64_codegen_expression(b, node->data.binary.left);
+        thrive_x64_push_r(b, REG_RAX);
+        thrive_x64_codegen_expression(b, node->data.binary.right);
+        thrive_x64_pop_r(b, REG_RBX); /* RBX=left, RAX=right */
+
+        switch (node->data.binary.op)
+        {
+        case THRIVE_TOKEN_KIND_ADD:
+            thrive_x64_add_rr(b, REG_RAX, REG_RBX);
+            break;
+        case THRIVE_TOKEN_KIND_SUB:
+            thrive_x64_sub_rr(b, REG_RBX, REG_RAX);
+            thrive_x64_mov_rr(b, REG_RAX, REG_RBX);
+            break;
+        case THRIVE_TOKEN_KIND_MUL:
+            thrive_x64_imul_rr(b, REG_RAX, REG_RBX);
+            break;
+        case THRIVE_TOKEN_KIND_DIV:
+            thrive_x64_xor_rr(b, REG_RDX, REG_RDX);
+            thrive_x64_mov_rr(b, REG_RCX, REG_RAX); /* RCX = right */
+            thrive_x64_mov_rr(b, REG_RAX, REG_RBX); /* RAX = left */
+            thrive_x64_idiv_r(b, REG_RCX);
+            break;
+        case THRIVE_TOKEN_KIND_LT:
+            thrive_x64_cmp_rr(b, REG_RBX, REG_RAX);
+            thrive_x64_setcc(b, CC_L);
+            thrive_x64_movzx_rax_al(b);
+            break;
+        case THRIVE_TOKEN_KIND_GT:
+            thrive_x64_cmp_rr(b, REG_RBX, REG_RAX);
+            thrive_x64_setcc(b, CC_G);
+            thrive_x64_movzx_rax_al(b);
+            break;
+        case THRIVE_TOKEN_KIND_LT_EQUALS:
+            thrive_x64_cmp_rr(b, REG_RBX, REG_RAX);
+            thrive_x64_setcc(b, CC_LE);
+            thrive_x64_movzx_rax_al(b);
+            break;
+        case THRIVE_TOKEN_KIND_GT_EQUALS:
+            thrive_x64_cmp_rr(b, REG_RBX, REG_RAX);
+            thrive_x64_setcc(b, CC_GE);
+            thrive_x64_movzx_rax_al(b);
+            break;
+        case THRIVE_TOKEN_KIND_EQUALS:
+            thrive_x64_cmp_rr(b, REG_RBX, REG_RAX);
+            thrive_x64_setcc(b, CC_E);
+            thrive_x64_movzx_rax_al(b);
+            break;
+        case THRIVE_TOKEN_KIND_NOT_EQUALS:
+            thrive_x64_cmp_rr(b, REG_RBX, REG_RAX);
+            thrive_x64_setcc(b, CC_NE);
+            thrive_x64_movzx_rax_al(b);
+            break;
+        case THRIVE_TOKEN_KIND_AND_BITWISE:
+            thrive_x64_and_rr(b, REG_RAX, REG_RBX);
+            break;
+        case THRIVE_TOKEN_KIND_OR_BITWISE:
+            thrive_x64_or_rr(b, REG_RAX, REG_RBX);
+            break;
+        case THRIVE_TOKEN_KIND_AND_LOGICAL:
+        {
+            i32 l_false = thrive_x64_codegen_new_label();
+            i32 l_end = thrive_x64_codegen_new_label();
+
+            thrive_x64_codegen_expression(b, node->data.binary.left);
+            thrive_x64_test_rr(b, REG_RAX, REG_RAX);
+            thrive_buffer_write_u8(b, 0x0F);
+            thrive_buffer_write_u8(b, 0x80 | CC_E);
+            thrive_x64_codegen_record_fixup(b, FIXUP_JMP, l_false);
+            thrive_x64_codegen_expression(b, node->data.binary.right);
+            thrive_x64_test_rr(b, REG_RAX, REG_RAX);
+            thrive_buffer_write_u8(b, 0x0F);
+            thrive_buffer_write_u8(b, 0x80 | CC_E);
+            thrive_x64_codegen_record_fixup(b, FIXUP_JMP, l_false);
+            thrive_x64_mov_ri64(b, REG_RAX, 1);
+            thrive_buffer_write_u8(b, 0xE9);
+            thrive_x64_codegen_record_fixup(b, FIXUP_JMP, l_end);
+            thrive_x64_codegen_bind_label(b, l_false);
+            thrive_x64_mov_ri64(b, REG_RAX, 0);
+            thrive_x64_codegen_bind_label(b, l_end);
+            break;
+        }
+        case THRIVE_TOKEN_KIND_OR_LOGICAL:
+        {
+            i32 l_true = thrive_x64_codegen_new_label();
+            i32 l_end = thrive_x64_codegen_new_label();
+
+            thrive_x64_codegen_expression(b, node->data.binary.left);
+            thrive_x64_test_rr(b, REG_RAX, REG_RAX);
+            thrive_buffer_write_u8(b, 0x0F);
+            thrive_buffer_write_u8(b, 0x80 | CC_NE);
+            thrive_x64_codegen_record_fixup(b, FIXUP_JMP, l_true);
+            thrive_x64_codegen_expression(b, node->data.binary.right);
+            thrive_x64_test_rr(b, REG_RAX, REG_RAX);
+            thrive_buffer_write_u8(b, 0x0F);
+            thrive_buffer_write_u8(b, 0x80 | CC_NE);
+            thrive_x64_codegen_record_fixup(b, FIXUP_JMP, l_true);
+            thrive_x64_mov_ri64(b, REG_RAX, 0);
+            thrive_buffer_write_u8(b, 0xE9);
+            thrive_x64_codegen_record_fixup(b, FIXUP_JMP, l_end);
+            thrive_x64_codegen_bind_label(b, l_true);
+            thrive_x64_mov_ri64(b, REG_RAX, 1);
+            thrive_x64_codegen_bind_label(b, l_end);
+            break;
+        }
+        default:
+            break;
+        }
+        break;
+    }
+    case THRIVE_AST_UNARY:
+    {
+        if (node->data.unary.op == THRIVE_TOKEN_KIND_INC || node->data.unary.op == THRIVE_TOKEN_KIND_DEC)
+        {
+            thrive_var *v = thrive_x64_codegen_find_var(node->data.unary.expr->data.name.start, node->data.unary.expr->data.name.length);
+            thrive_x64_mov_r_mrbp(b, REG_RAX, v->offset);
+            if (node->data.unary.op == THRIVE_TOKEN_KIND_INC)
+            {
+                thrive_x64_mov_ri32(b, REG_RBX, 1);
+                thrive_x64_add_rr(b, REG_RAX, REG_RBX);
+            }
+            else
+            {
+                thrive_x64_mov_ri32(b, REG_RBX, 1);
+                thrive_x64_sub_rr(b, REG_RAX, REG_RBX);
+            }
+            thrive_x64_mov_mrbp_r(b, v->offset, REG_RAX);
+        }
+        else
+        {
+            thrive_x64_codegen_expression(b, node->data.unary.expr);
+            switch (node->data.unary.op)
+            {
+            case THRIVE_TOKEN_KIND_SUB:
+                thrive_x64_neg_r(b, REG_RAX);
+                break;
+            case THRIVE_TOKEN_KIND_NEGATE:
+                thrive_x64_test_rr(b, REG_RAX, REG_RAX);
+                thrive_x64_setcc(b, CC_E);
+                thrive_x64_movzx_rax_al(b);
+                break;
+            default:
+                break;
+            }
+        }
+        break;
+    }
+    case THRIVE_AST_TERNARY:
+    {
+        i32 l_else = thrive_x64_codegen_new_label();
+        i32 l_end = thrive_x64_codegen_new_label();
+
+        thrive_x64_codegen_expression(b, node->data.ternary.cond);
+        thrive_x64_test_rr(b, REG_RAX, REG_RAX);
+        thrive_buffer_write_u8(b, 0x0F);
+        thrive_buffer_write_u8(b, 0x80 | CC_E);
+        thrive_x64_codegen_record_fixup(b, FIXUP_JMP, l_else);
+        thrive_x64_codegen_expression(b, node->data.ternary.then_expr);
+        thrive_buffer_write_u8(b, 0xE9);
+        thrive_x64_codegen_record_fixup(b, FIXUP_JMP, l_end);
+        thrive_x64_codegen_bind_label(b, l_else);
+        thrive_x64_codegen_expression(b, node->data.ternary.else_expr);
+        thrive_x64_codegen_bind_label(b, l_end);
+        break;
+    }
+    case THRIVE_AST_ASSIGN:
+    {
+        thrive_ast *left = node->data.assign.left;
+        thrive_ast *right = node->data.assign.right;
+
+        if (left->kind == THRIVE_AST_DEREF)
+        {
+            thrive_x64_codegen_expression(b, right);
+            thrive_x64_push_r(b, REG_RAX);
+            thrive_x64_codegen_expression(b, left->data.unary.expr);
+            thrive_x64_pop_r(b, REG_RBX);
+            thrive_x64_mov_mr_r(b, REG_RAX, REG_RBX);
+        }
+        else if (left->kind == THRIVE_AST_ARRAY_ACCESS)
+        {
+            thrive_x64_codegen_expression(b, right);
+            thrive_x64_push_r(b, REG_RAX);
+            thrive_x64_codegen_expression(b, left->data.array_access.index);
+            thrive_x64_mov_ri32(b, REG_RBX, 8);
+            thrive_x64_imul_rr(b, REG_RAX, REG_RBX);
+            thrive_x64_push_r(b, REG_RAX);
+            thrive_x64_codegen_expression(b, left->data.array_access.left);
+            thrive_x64_pop_r(b, REG_RBX);
+            thrive_x64_add_rr(b, REG_RAX, REG_RBX);
+            thrive_x64_pop_r(b, REG_RBX);
+            thrive_x64_mov_mr_r(b, REG_RAX, REG_RBX);
+        }
+        else
+        {
+            thrive_var *v;
+
+            thrive_x64_codegen_expression(b, right);
+
+            v = thrive_x64_codegen_find_var(left->data.name.start, left->data.name.length);
+
+            thrive_x64_mov_mrbp_r(b, v->offset, REG_RAX);
+        }
+        break;
+    }
+    case THRIVE_AST_ADDR_OF:
+    {
+        thrive_var *v = thrive_x64_codegen_find_var(node->data.unary.expr->data.name.start, node->data.unary.expr->data.name.length);
+        thrive_x64_lea_r_mrbp(b, REG_RAX, v->offset);
+        break;
+    }
+    case THRIVE_AST_DEREF:
+        thrive_x64_codegen_expression(b, node->data.unary.expr);
+        thrive_x64_mov_r_mr(b, REG_RAX, REG_RAX);
+        break;
+    case THRIVE_AST_BREAK:
+        thrive_buffer_write_u8(b, 0xE9);
+        thrive_x64_codegen_record_fixup(b, FIXUP_JMP, current_break_label);
+        break;
+    case THRIVE_AST_CONTINUE:
+        thrive_buffer_write_u8(b, 0xE9);
+        thrive_x64_codegen_record_fixup(b, FIXUP_JMP, current_continue_label);
+        break;
+    case THRIVE_AST_FUNC_CALL:
+    {
+        thrive_ast *curr = node->data.func_call.args;
+        thrive_x64_reg arg_regs[] = {REG_RCX, REG_RDX, REG_R8, REG_R9};
+        u32 arg_count = 0, i, stack_cleanup;
+        i32 f_idx = thrive_x64_codegen_find_or_add_func(node->data.func_call.name->data.name.start, node->data.func_call.name->data.name.length);
+        u32 reg_args;
+
+        while (curr)
+        {
+            thrive_x64_codegen_expression(b, curr);
+            thrive_x64_push_r(b, REG_RAX);
+            arg_count++;
+            curr = curr->next;
+        }
+
+        reg_args = arg_count > 4 ? 4 : arg_count;
+
+        for (i = reg_args; i > 0; --i)
+        {
+            thrive_x64_pop_r(b, arg_regs[i - 1]);
+        }
+
+        thrive_x64_sub_rsp_imm32(b, 32); /* Shadow space */
+
+        if (funcs[f_idx].is_external)
+        {
+            thrive_buffer_write_u8(b, 0xFF);
+            thrive_buffer_write_u8(b, 0x15);
+            thrive_x64_codegen_record_fixup(b, FIXUP_CALL_IAT, f_idx);
+        }
+        else
+        {
+            thrive_buffer_write_u8(b, 0xE8);
+            thrive_x64_codegen_record_fixup(b, FIXUP_CALL_REL, f_idx);
+        }
+
+        stack_cleanup = 32 + (arg_count > 4 ? (arg_count - 4) * 8 : 0);
+        thrive_x64_add_rsp_imm32(b, stack_cleanup);
+        break;
+    }
+    case THRIVE_AST_STRING:
+    {
+        u32 id = string_count++;
+
+        string_pool[id].start = node->data.string_lit.start;
+        string_pool[id].length = node->data.string_lit.length;
+
+        thrive_x64_rex(b, 1, REG_RAX, 0);
+        thrive_buffer_write_u8(b, 0x8D); /* LEA RAX, [rel STR] */
+        thrive_buffer_write_u8(b, 0x05);
+        thrive_x64_codegen_record_fixup(b, FIXUP_STRING, (i32)id);
+        break;
+    }
+    /*
+    case THRIVE_TOKEN_KIND_LSHIFT:
+        thrive_x64_mov_rr(b, REG_RCX, REG_RAX);
+        thrive_x64_shl_cl(b, REG_RBX);
+        thrive_x64_mov_rr(b, REG_RAX, REG_RBX);
+        break;
+    case THRIVE_TOKEN_KIND_RSHIFT:
+        thrive_x64_mov_rr(b, REG_RCX, REG_RAX);
+        thrive_x64_shr_cl(b, REG_RBX);
+        thrive_x64_mov_rr(b, REG_RAX, REG_RBX);
+        break;
+    */
+    default:
+        break;
+    }
+}
+
+THRIVE_API void thrive_x64_codegen_statement(thrive_buffer *b, thrive_ast *node)
+{
+    switch (node->kind)
+    {
+    case THRIVE_AST_DECL:
+    {
+        thrive_ast *name = node->data.decl.name;
+        thrive_var *v = thrive_x64_codegen_add_var(name->data.name.start, name->data.name.length, node->data.decl.is_array, node->data.decl.array_size);
+
+        if (node->data.decl.value)
+        {
+            thrive_x64_codegen_expression(b, node->data.decl.value);
+            thrive_x64_mov_mrbp_r(b, v->offset, REG_RAX);
+        }
+        break;
+    }
+    case THRIVE_AST_IF:
+    {
+        i32 l_else = thrive_x64_codegen_new_label();
+        i32 l_end = thrive_x64_codegen_new_label();
+
+        thrive_x64_codegen_expression(b, node->data.if_stmt.cond);
+        thrive_x64_test_rr(b, REG_RAX, REG_RAX);
+
+        thrive_buffer_write_u8(b, 0x0F);
+        thrive_buffer_write_u8(b, 0x80 | CC_E);
+        thrive_x64_codegen_record_fixup(b, FIXUP_JMP, node->data.if_stmt.else_branch ? l_else : l_end);
+
+        thrive_x64_codegen_statement(b, node->data.if_stmt.then_branch);
+
+        if (node->data.if_stmt.else_branch)
+        {
+            thrive_buffer_write_u8(b, 0xE9);
+            thrive_x64_codegen_record_fixup(b, FIXUP_JMP, l_end);
+            thrive_x64_codegen_bind_label(b, l_else);
+            thrive_x64_codegen_statement(b, node->data.if_stmt.else_branch);
+        }
+        thrive_x64_codegen_bind_label(b, l_end);
+        break;
+    }
+    case THRIVE_AST_FOR:
+    {
+        i32 start_label = thrive_x64_codegen_new_label();
+        i32 step_label = thrive_x64_codegen_new_label();
+        i32 end_label = thrive_x64_codegen_new_label();
+        i32 old_break = current_break_label, old_continue = current_continue_label;
+        current_break_label = end_label;
+        current_continue_label = step_label;
+
+        thrive_x64_codegen_expression(b, node->data.for_loop.init);
+        thrive_x64_codegen_bind_label(b, start_label);
+        thrive_x64_codegen_expression(b, node->data.for_loop.cond);
+        thrive_x64_test_rr(b, REG_RAX, REG_RAX);
+        thrive_buffer_write_u8(b, 0x0F);
+        thrive_buffer_write_u8(b, 0x80 | CC_E);
+        thrive_x64_codegen_record_fixup(b, FIXUP_JMP, end_label);
+
+        thrive_x64_codegen_statement(b, node->data.for_loop.body);
+
+        thrive_x64_codegen_bind_label(b, step_label);
+        thrive_x64_codegen_expression(b, node->data.for_loop.step);
+        thrive_buffer_write_u8(b, 0xE9);
+        thrive_x64_codegen_record_fixup(b, FIXUP_JMP, start_label);
+        thrive_x64_codegen_bind_label(b, end_label);
+
+        current_break_label = old_break;
+        current_continue_label = old_continue;
+        break;
+    }
+    case THRIVE_AST_BLOCK:
+    {
+        thrive_ast *curr = node->data.block.body;
+        while (curr)
+        {
+            thrive_x64_codegen_statement(b, curr);
+            curr = curr->next;
+        }
+        break;
+    }
+    case THRIVE_AST_FUNC_DECL:
+    {
+        thrive_ast *curr = node->data.func_decl.params;
+        thrive_x64_reg arg_regs[] = {REG_RCX, REG_RDX, REG_R8, REG_R9};
+        u32 p_idx = 0;
+
+        i32 f_idx = thrive_x64_codegen_find_or_add_func(node->data.func_decl.name->data.name.start, node->data.func_decl.name->data.name.length);
+
+        u32 saved_var_count;
+        i32 saved_stack_offset;
+
+        funcs[f_idx].rva = 0x1000 + b->size;
+
+        thrive_x64_push_r(b, REG_RBP);
+        thrive_x64_mov_rr(b, REG_RBP, REG_RSP);
+        thrive_x64_sub_rsp_imm32(b, 256);
+
+        saved_var_count = var_count;
+        saved_stack_offset = stack_offset;
+        stack_offset = 0;
+        in_function = 1;
+
+        while (curr && p_idx < 4)
+        {
+            thrive_var *v = thrive_x64_codegen_add_var(curr->data.name.start, curr->data.name.length, 0, 0);
+            thrive_x64_mov_mrbp_r(b, v->offset, arg_regs[p_idx++]);
+            curr = curr->next;
+        }
+
+        thrive_x64_codegen_statement(b, node->data.func_decl.body);
+
+        thrive_x64_leave(b);
+        thrive_x64_ret(b);
+
+        var_count = saved_var_count;
+        stack_offset = saved_stack_offset;
+        in_function = 0;
+
+        break;
+    }
+    case THRIVE_AST_RETURN:
+        thrive_x64_codegen_expression(b, node->data.ret.expr);
+        if (in_function)
+        {
+            thrive_x64_leave(b);
+            thrive_x64_ret(b);
+        }
+        else
+        {
+            /* If we are at the top-level scope, default behaviour: ExitProcess */
+            i32 exit_idx;
+
+            thrive_x64_mov_rr(b, REG_RCX, REG_RAX);
+            exit_idx = thrive_x64_codegen_find_or_add_func((s8 *)"ExitProcess", 11);
+            funcs[exit_idx].is_external = 1; /* Best effort fallback */
+            thrive_x64_sub_rsp_imm32(b, 32);
+            thrive_buffer_write_u8(b, 0xFF);
+            thrive_buffer_write_u8(b, 0x15);
+            thrive_x64_codegen_record_fixup(b, FIXUP_CALL_IAT, exit_idx);
+            thrive_x64_add_rsp_imm32(b, 32);
+        }
+        break;
+    default:
+        thrive_x64_codegen_expression(b, node);
+        break;
+    }
+}
+
+void thrive_x64_codegen_program(thrive_buffer *code_b, thrive_ast *node, thrive_buffer *exe_out)
+{
+    thrive_ast *curr;
+    u32 i;
+    thrive_p32_plus_import imports[2];
+    u32 num_imports = 0;
+
+    u32 text_rva;
+
+    func_count = 0;
+    fixup_count = 0;
+    string_count = 0;
+
+    /* Pass 1: Collect External Decl */
+    import_name_pool_offset = 0; /* Reset pool for fresh generations */
+
+    curr = node->data.block.body;
+    while (curr)
+    {
+        if (curr->kind == THRIVE_AST_EXT_DECL)
+        {
+            i32 f_idx = thrive_x64_codegen_find_or_add_func(curr->data.ext_decl.name->data.name.start, curr->data.ext_decl.name->data.name.length);
+
+            u32 len;
+            s8 *null_terminated_name;
+            u32 j;
+
+            funcs[f_idx].is_external = 1;
+
+            /* Extract and NULL-terminate the function name for the PE Importer */
+            len = funcs[f_idx].length;
+            null_terminated_name = &import_name_pool[import_name_pool_offset];
+
+            for (j = 0; j < len; ++j)
+            {
+                null_terminated_name[j] = funcs[f_idx].start[j];
+            }
+            null_terminated_name[len] = '\0';
+            import_name_pool_offset += len + 1;
+
+            /* Use the null-terminated version for the imports table */
+            if (null_terminated_name[0] == 'M' && null_terminated_name[1] == 'e' && null_terminated_name[2] == 's')
+            { /* MessageBoxA */
+                funcs[f_idx].ext_dll_index = 0;
+                funcs[f_idx].ext_func_index = u32_fc;
+                user32_funcs[u32_fc++] = (char *)null_terminated_name;
+            }
+            else
+            {
+                funcs[f_idx].ext_dll_index = 1;
+                funcs[f_idx].ext_func_index = k32_fc;
+                kernel32_funcs[k32_fc++] = (char *)null_terminated_name;
+            }
+        }
+        curr = curr->next;
+    }
+
+    if (u32_fc > 0)
+    {
+        imports[num_imports].library = kUser32;
+        imports[num_imports].imports = user32_funcs;
+        imports[num_imports].imports_count = u32_fc;
+        /* Re-map dll indices */
+        for (i = 0; i < func_count; ++i)
+        {
+            if (funcs[i].is_external && funcs[i].ext_dll_index == 0)
+                funcs[i].ext_dll_index = num_imports;
+        }
+        num_imports++;
+    }
+    if (k32_fc > 0)
+    {
+        imports[num_imports].library = kKernel32;
+        imports[num_imports].imports = kernel32_funcs;
+        imports[num_imports].imports_count = k32_fc;
+        for (i = 0; i < func_count; ++i)
+        {
+            if (funcs[i].is_external && funcs[i].ext_dll_index == 1)
+                funcs[i].ext_dll_index = num_imports;
+        }
+        num_imports++;
+    }
+
+    /* Pass 2: Main Logic */
+    thrive_x64_codegen_reset_locals();
+    thrive_x64_push_r(code_b, REG_RBP);
+    thrive_x64_mov_rr(code_b, REG_RBP, REG_RSP);
+    thrive_x64_sub_rsp_imm32(code_b, 256);
+
+    curr = node->data.block.body;
+    while (curr)
+    {
+        if (curr->kind != THRIVE_AST_FUNC_DECL && curr->kind != THRIVE_AST_EXT_DECL)
+            thrive_x64_codegen_statement(code_b, curr);
+        curr = curr->next;
+    }
+    thrive_x64_leave(code_b);
+    thrive_x64_ret(code_b);
+
+    /* Pass 3: Internal Functions */
+    curr = node->data.block.body;
+    while (curr)
+    {
+        if (curr->kind == THRIVE_AST_FUNC_DECL)
+            thrive_x64_codegen_statement(code_b, curr);
+        curr = curr->next;
+    }
+
+    /* Pass 4: Embed Strings into Text Section */
+    for (i = 0; i < string_count; ++i)
+    {
+        u32 j;
+        string_pool[i].offset = code_b->size;
+        for (j = 0; j < string_pool[i].length; ++j)
+        {
+            if (string_pool[i].start[j] == '\\' && j + 1 < string_pool[i].length)
+            {
+                j++;
+                switch (string_pool[i].start[j])
+                {
+                case 'n':
+                    thrive_buffer_write_u8(code_b, 10);
+                    break;
+                case 'r':
+                    thrive_buffer_write_u8(code_b, 13);
+                    break;
+                case 't':
+                    thrive_buffer_write_u8(code_b, 9);
+                    break;
+                case '0':
+                    thrive_buffer_write_u8(code_b, 0);
+                    break;
+                default:
+                    thrive_buffer_write_u8(code_b, (u8)string_pool[i].start[j]);
+                    break;
+                }
+            }
+            else
+            {
+                thrive_buffer_write_u8(code_b, (u8)string_pool[i].start[j]);
+            }
+        }
+        thrive_buffer_write_u8(code_b, 0); /* Null Terminator */
+    }
+
+    /* Recalculate IAT RVAs dynamically based on final text size */
+    for (i = 0; i < func_count; ++i)
+    {
+        if (funcs[i].is_external)
+        {
+            funcs[i].rva = thrive_pe32_plus_get_iat_rva(imports, num_imports, code_b->size, funcs[i].ext_dll_index, funcs[i].ext_func_index);
+        }
+    }
+
+    /* Pass 5: Apply Fixups */
+    text_rva = 0x1000;
+
+    for (i = 0; i < fixup_count; ++i)
+    {
+        thrive_fixup *f = &fixups[i];
+        i32 rel = 0;
+        u32 *patch_ptr;
+
+        if (f->type == FIXUP_JMP)
+        {
+            rel = (i32)label_offsets[f->target_id] - (i32)f->instr_end_offset;
+        }
+        else if (f->type == FIXUP_CALL_REL)
+        {
+            u32 internal_target_offset = funcs[f->target_id].rva - text_rva;
+            rel = (i32)internal_target_offset - (i32)f->instr_end_offset;
+        }
+        else if (f->type == FIXUP_CALL_IAT)
+        {
+            u32 target_rva = funcs[f->target_id].rva;
+            u32 curr_rva = text_rva + f->instr_end_offset;
+            rel = (i32)target_rva - (i32)curr_rva;
+        }
+        else if (f->type == FIXUP_STRING)
+        {
+            rel = (i32)string_pool[f->target_id].offset - (i32)f->instr_end_offset;
+        }
+
+        patch_ptr = (u32 *)(code_b->data + f->buffer_offset);
+        *patch_ptr = (u32)rel;
+    }
+
+    /* Finally, emit executable via your PE32+ generator */
+    thrive_pe32_plus_generate(exe_out, code_b, imports, num_imports, code_b->size);
 }
 
 #endif /* THRIVE_H */
