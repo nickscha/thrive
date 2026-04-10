@@ -1,9 +1,9 @@
 
-#include "thrive.h"
+#include "../thrive.h"
+#include "../thrive_ast_print.h"
+
 #include "stdio.h"
 #include "stdlib.h"
-
-#include "thrive_ast_print.h"
 
 /* #############################################################################
  * # [SECTION] Testing
