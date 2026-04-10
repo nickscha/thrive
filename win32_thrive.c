@@ -547,13 +547,6 @@ THRIVE_API i32 thrive_compile(s8 *file_name, void *hConsole, LARGE_INTEGER *freq
     source_code = win32_io_file_read(file_name, &source_code_size);
     QueryPerformanceCounter(&metrics[METRIC_IO_FILE_READ].time_end);
 
-    /* Print source code */
-    SetConsoleTextAttribute(hConsole, 9);
-    WriteConsoleA(hConsole, "[thrive] ", 9, &written, 0);
-    SetConsoleTextAttribute(hConsole, 7);
-    WriteConsoleA(hConsole, "source code:\n", 13, &written, 0);
-    WriteConsoleA(hConsole, source_code, thrive_string_length(source_code), &written, 0);
-
     if (!source_code)
     {
         SetConsoleTextAttribute(hConsole, 12); /* red */

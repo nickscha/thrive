@@ -3068,7 +3068,8 @@ THRIVE_API void thrive_x64_codegen_expression(thrive_buffer *b, thrive_ast *node
     {
         thrive_ast *curr = node->data.func_call.args;
         thrive_x64_reg arg_regs[] = {REG_RCX, REG_RDX, REG_R8, REG_R9};
-        u32 arg_count = 0, i, stack_cleanup, extra_args;
+        u32 arg_count = 0, i, extra_args;
+        u32 stack_padding = 0, total_stack_alloc = 0;
         i32 f_idx = thrive_x64_codegen_find_or_add_func(node->data.func_call.name->data.name.start, node->data.func_call.name->data.name.length);
         u32 reg_args_to_process;
 
@@ -3078,9 +3079,17 @@ THRIVE_API void thrive_x64_codegen_expression(thrive_buffer *b, thrive_ast *node
             curr = curr->next;
         }
 
-        if (arg_count > 4)
+        extra_args = arg_count > 4 ? arg_count - 4 : 0;
+        stack_padding = (extra_args % 2 != 0) ? 8 : 0;
+        total_stack_alloc = 32 + (extra_args * 8) + stack_padding;
+
+        if (stack_padding > 0)
         {
-            extra_args = arg_count - 4;
+            thrive_x64_sub_rsp_imm32(b, stack_padding);
+        }
+
+        if (extra_args > 0)
+        {
             for (i = 0; i < extra_args; ++i)
             {
                 u32 target_idx = arg_count - 1 - i;
@@ -3099,6 +3108,7 @@ THRIVE_API void thrive_x64_codegen_expression(thrive_buffer *b, thrive_ast *node
 
         reg_args_to_process = arg_count > 4 ? 4 : arg_count;
         curr = node->data.func_call.args;
+
         for (i = 0; i < reg_args_to_process; ++i)
         {
             thrive_x64_codegen_expression(b, curr);
@@ -3111,6 +3121,7 @@ THRIVE_API void thrive_x64_codegen_expression(thrive_buffer *b, thrive_ast *node
             thrive_x64_pop_r(b, arg_regs[i - 1]);
         }
 
+        /* 32 bytes shadow space */
         thrive_x64_sub_rsp_imm32(b, 32);
 
         if (funcs[f_idx].is_external)
@@ -3125,8 +3136,7 @@ THRIVE_API void thrive_x64_codegen_expression(thrive_buffer *b, thrive_ast *node
             thrive_x64_codegen_record_fixup(b, FIXUP_CALL_REL, f_idx);
         }
 
-        stack_cleanup = 32 + (arg_count > 4 ? (arg_count - 4) * 8 : 0);
-        thrive_x64_add_rsp_imm32(b, stack_cleanup);
+        thrive_x64_add_rsp_imm32(b, total_stack_alloc);
         break;
     }
     case THRIVE_AST_STRING:
