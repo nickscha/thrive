@@ -1761,14 +1761,26 @@ THRIVE_API thrive_ast *thrive_ast_fold(thrive_ast *node)
 
         if (node->data.if_stmt.cond->kind == THRIVE_AST_INT)
         {
-            if (node->data.if_stmt.cond->data.int_value != 0)
+            thrive_ast *selected_branch =
+                (node->data.if_stmt.cond->data.int_value != 0)
+                    ? node->data.if_stmt.then_branch
+                    : node->data.if_stmt.else_branch;
+
+            if (selected_branch)
             {
-                return thrive_ast_fold(node->data.if_stmt.then_branch);
+                thrive_ast *folded = thrive_ast_fold(selected_branch);
+                thrive_ast *tail = folded;
+
+                while (tail->next)
+                {
+                    tail = tail->next;
+                }
+                tail->next = node->next;
+
+                return folded;
             }
-            else
-            {
-                return thrive_ast_fold(node->data.if_stmt.else_branch);
-            }
+
+            return node->next;
         }
 
         node->data.if_stmt.then_branch = thrive_ast_fold(node->data.if_stmt.then_branch);
