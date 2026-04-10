@@ -94,67 +94,6 @@ int main(void)
         "MessageBoxA(0 : text3 : caption : 0)\n"
         "ExitProcess(0)\n";
 
-    /*
-    s8 *source_code =
-        "ext u32 ExitProcess(u32 uExitCode)\n"
-        "u32 i = (1 + 2) * 2 - 2\n"
-        "ExitProcess(i)\n";
-
-    s8 *source_code =
-        "ext u32 ExitProcess(u32 uExitCode)\n"
-        "u32 mul(u32 a : u32 b) {\n"
-        " a * b\n"
-        "}\n"
-        "\n"
-        "u32 add(u32 a : u32 b) {\n"
-        " a + b\n"
-        "}\n"
-        "\n"
-        "u32 result = mul(add(1 : 3) : 2)\n"
-        "ExitProcess(result)\n";
-
-    s8 *source_code =
-        "u32  i = 1\n"
-        "for(i = 0 : i < 10 : ++i) {\n"
-        " continue\n"
-        " i += 1\n"
-        "}\n"
-        "ret i\n";
-
-    s8 *source_code =
-        "u32  i = 1\n"
-        "u32 *b = &i\n"
-        "u32  c = *&i\n"
-        "ret c\n";
-
-    s8 *source_code =
-        "u32  i = 1\n"
-        "u32 *b = &i\n"
-        "u32  c = *&i\n"
-        "\n"
-        "for(i = 0 : i < 10 : i++) {\n"
-        " i += 1\n"
-        "}\n"
-        "\n"
-        "ret i\n";
-
-    s8 *source_code =
-        "; this is a line comment\n"
-        "u32 a\n"
-        "a = 20 * (400 + 2) ;another comment 1 * 2\n"
-        "ret a\n";
-
-    s8 *source_code =
-        "u32 a = 10\n"
-        "if (a > 5) {\n"
-        " a = 1\n"
-        " a = 2\n"
-        "} else {\n"
-        " a = 3\n"
-        "}\n"
-        "ret a\n";
-    */
-
     thrive_state state = {0};
 
     state.line = 1;
