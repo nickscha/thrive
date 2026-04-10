@@ -1972,7 +1972,7 @@ THRIVE_API THRIVE_INLINE void thrive_buffer_write_string_length(thrive_buffer *b
     thrive_buffer_write_bytes(b, (u8 *)str, len);
 }
 
-THRIVE_API THRIVE_INLINE void thrive_buffer_write_i32(thrive_buffer *b, i32 val)
+THRIVE_API THRIVE_INLINE void thrive_buffer_write_i32_ascii(thrive_buffer *b, i32 val)
 {
     s8 buf[12];
     i32 i = 11;
