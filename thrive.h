@@ -1332,6 +1332,9 @@ THRIVE_API thrive_ast *thrive_ast_parse_statement(thrive_state *state)
         /* Skip return type for now */
         thrive_token_expect_type(state);
 
+        /* Handle pointer '*' if present */
+        thrive_token_accept(state, THRIVE_TOKEN_KIND_MUL);
+
         name_tok = state->current;
         thrive_token_expect(state, THRIVE_TOKEN_KIND_NAME);
 
