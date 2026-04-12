@@ -1023,7 +1023,18 @@ THRIVE_API void thrive_token_expect_type(thrive_state *state)
     }
     else
     {
-        thrive_error(state, THRIVE_STATUS_ERROR_SYNTAX, "Expected type identifier");
+        u8 buf[128];
+
+        thrive_buffer b = {0};
+        b.data = buf;
+        b.capacity = 128;
+
+        thrive_buffer_write_string(&b, "Expected type 'u32' or 's8'");
+        thrive_buffer_write_string(&b, " but got '");
+        thrive_buffer_write_string(&b, thrive_token_kind_names[state->current.kind]);
+        thrive_buffer_write_string(&b, "'.");
+
+        thrive_error(state, THRIVE_STATUS_ERROR_SYNTAX, (s8 *)b.data);
     }
 }
 
@@ -1544,23 +1555,23 @@ THRIVE_API thrive_ast *thrive_ast_parse_statement(thrive_state *state)
             while (state->current.kind != THRIVE_TOKEN_KIND_RPAREN &&
                    state->current.kind != THRIVE_TOKEN_KIND_EOF)
             {
-                if (thrive_token_accept_type(state))
-                {
-                    thrive_token p_tok;
-                    thrive_ast *p_name;
 
-                    thrive_token_accept(state, THRIVE_TOKEN_KIND_MUL);
+                thrive_token p_tok;
+                thrive_ast *p_name;
 
-                    p_tok = state->current;
-                    thrive_token_expect(state, THRIVE_TOKEN_KIND_NAME);
+                thrive_token_expect_type(state);
 
-                    p_name = thrive_ast_create(state, THRIVE_AST_NAME);
-                    p_name->data.name.start = p_tok.start;
-                    p_name->data.name.length = (u32)(p_tok.end - p_tok.start);
+                thrive_token_accept(state, THRIVE_TOKEN_KIND_MUL);
 
-                    *p_tail = p_name;
-                    p_tail = &p_name->next;
-                }
+                p_tok = state->current;
+                thrive_token_expect(state, THRIVE_TOKEN_KIND_NAME);
+
+                p_name = thrive_ast_create(state, THRIVE_AST_NAME);
+                p_name->data.name.start = p_tok.start;
+                p_name->data.name.length = (u32)(p_tok.end - p_tok.start);
+
+                *p_tail = p_name;
+                p_tail = &p_name->next;
 
                 if (!thrive_token_accept(state, THRIVE_TOKEN_KIND_COLON))
                 {
