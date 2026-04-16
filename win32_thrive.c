@@ -751,7 +751,7 @@ THRIVE_API i32 start(i32 argc, s8 **argv)
 
     (void)conf_enable_optimized;
 
-    /* Pri32 usage */
+    /* Print usage */
     if (argc < 2)
     {
         WriteConsoleA(hConsole, "[thrive] usage  : ", 18, &written, 0);
