@@ -750,7 +750,6 @@ THRIVE_API i32 start(i32 argc, s8 **argv)
     u8 conf_enable_optimized = 0;
 
     (void)conf_enable_optimized;
-    (void)win32_io_file_write;
 
     /* Pri32 usage */
     if (argc < 2)
