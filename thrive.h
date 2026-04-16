@@ -2001,6 +2001,7 @@ THRIVE_API thrive_ast *thrive_ast_fold(thrive_ast *node)
     case THRIVE_AST_FUNC_CALL:
     {
         thrive_ast **curr = &node->data.func_call.args;
+
         while (*curr)
         {
             *curr = thrive_ast_fold(*curr);
@@ -2012,6 +2013,7 @@ THRIVE_API thrive_ast *thrive_ast_fold(thrive_ast *node)
     case THRIVE_AST_EXT_DECL:
     {
         thrive_ast **curr = &node->data.ext_decl.params;
+
         while (*curr)
         {
             *curr = thrive_ast_fold(*curr);
@@ -2194,9 +2196,9 @@ void thrive_pe32_plus_generate(
     thrive_buffer_write_u32(out, 16);            /* NumberOfRvaAndSizes */
 
     /* Data Directories */
-    thrive_buffer_write_u32(out, 0);
-    thrive_buffer_write_u32(out, 0); /* Export Directory */
-    thrive_buffer_write_u32(out, idt_rva);
+    thrive_buffer_write_u32(out, 0);        /* */
+    thrive_buffer_write_u32(out, 0);        /* Export Directory */
+    thrive_buffer_write_u32(out, idt_rva);  /* */
     thrive_buffer_write_u32(out, idt_size); /* Import Directory */
 
     for (i = 2; i < 16; ++i)
@@ -2323,6 +2325,7 @@ typedef enum thrive_x64_reg
     REG_R13 = 13,
     REG_R14 = 14,
     REG_R15 = 15
+
 } thrive_x64_reg;
 
 typedef enum thrive_x64_op_ext
@@ -2336,6 +2339,7 @@ typedef enum thrive_x64_op_ext
     OP_EXT_XOR = 6,
     OP_EXT_CMP = 7,
     OP_EXT_MOV = 0
+
 } thrive_x64_op_ext;
 
 typedef enum thrive_x64_cc
@@ -2356,6 +2360,7 @@ typedef enum thrive_x64_cc
     CC_GE = 0xD,
     CC_LE = 0xE,
     CC_G = 0xF
+
 } thrive_x64_cc;
 
 THRIVE_API THRIVE_INLINE void thrive_x64_modrm_reg(thrive_buffer *b, thrive_x64_reg reg, thrive_x64_reg rm)
@@ -2843,6 +2848,7 @@ THRIVE_API void thrive_x64_codegen_expression(thrive_buffer *b, thrive_ast *node
     case THRIVE_AST_NAME:
     {
         thrive_var *v = thrive_x64_codegen_find_var(node->data.name.start, node->data.name.length);
+
         if (v->is_array)
         {
             thrive_x64_lea_r_mrbp(b, REG_RAX, v->offset);
@@ -3241,6 +3247,7 @@ THRIVE_API void thrive_x64_codegen_statement(thrive_buffer *b, thrive_ast *node)
         i32 step_label = thrive_x64_codegen_new_label();
         i32 end_label = thrive_x64_codegen_new_label();
         i32 old_break = current_break_label, old_continue = current_continue_label;
+
         current_break_label = end_label;
         current_continue_label = step_label;
 
@@ -3267,6 +3274,7 @@ THRIVE_API void thrive_x64_codegen_statement(thrive_buffer *b, thrive_ast *node)
     case THRIVE_AST_BLOCK:
     {
         thrive_ast *curr = node->data.block.body;
+
         while (curr)
         {
             thrive_x64_codegen_statement(b, curr);
@@ -3359,6 +3367,7 @@ void thrive_x64_codegen_program(thrive_buffer *code_b, thrive_ast *node, thrive_
     import_name_pool_offset = 0; /* Reset pool for fresh generations */
 
     curr = node->data.block.body;
+
     while (curr)
     {
         if (curr->kind == THRIVE_AST_EXT_DECL)
@@ -3387,13 +3396,13 @@ void thrive_x64_codegen_program(thrive_buffer *code_b, thrive_ast *node, thrive_
             { /* MessageBoxA */
                 funcs[f_idx].ext_dll_index = 0;
                 funcs[f_idx].ext_func_index = u32_fc;
-                user32_funcs[u32_fc++] = (char *)null_terminated_name;
+                user32_funcs[u32_fc++] = (s8 *)null_terminated_name;
             }
             else
             {
                 funcs[f_idx].ext_dll_index = 1;
                 funcs[f_idx].ext_func_index = k32_fc;
-                kernel32_funcs[k32_fc++] = (char *)null_terminated_name;
+                kernel32_funcs[k32_fc++] = (s8 *)null_terminated_name;
             }
         }
         curr = curr->next;
@@ -3408,7 +3417,9 @@ void thrive_x64_codegen_program(thrive_buffer *code_b, thrive_ast *node, thrive_
         for (i = 0; i < func_count; ++i)
         {
             if (funcs[i].is_external && funcs[i].ext_dll_index == 0)
+            {
                 funcs[i].ext_dll_index = num_imports;
+            }
         }
         num_imports++;
     }
@@ -3420,7 +3431,9 @@ void thrive_x64_codegen_program(thrive_buffer *code_b, thrive_ast *node, thrive_
         for (i = 0; i < func_count; ++i)
         {
             if (funcs[i].is_external && funcs[i].ext_dll_index == 1)
+            {
                 funcs[i].ext_dll_index = num_imports;
+            }
         }
         num_imports++;
     }
@@ -3435,7 +3448,9 @@ void thrive_x64_codegen_program(thrive_buffer *code_b, thrive_ast *node, thrive_
     while (curr)
     {
         if (curr->kind != THRIVE_AST_FUNC_DECL && curr->kind != THRIVE_AST_EXT_DECL)
+        {
             thrive_x64_codegen_statement(code_b, curr);
+        }
         curr = curr->next;
     }
     thrive_x64_leave(code_b);
@@ -3446,7 +3461,9 @@ void thrive_x64_codegen_program(thrive_buffer *code_b, thrive_ast *node, thrive_
     while (curr)
     {
         if (curr->kind == THRIVE_AST_FUNC_DECL)
+        {
             thrive_x64_codegen_statement(code_b, curr);
+        }
         curr = curr->next;
     }
 
@@ -3460,6 +3477,7 @@ void thrive_x64_codegen_program(thrive_buffer *code_b, thrive_ast *node, thrive_
             if (string_pool[i].start[j] == '\\' && j + 1 < string_pool[i].length)
             {
                 j++;
+
                 switch (string_pool[i].start[j])
                 {
                 case 'n':
