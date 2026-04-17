@@ -10,6 +10,7 @@ LICENSE
 */
 #include "thrive.h"
 
+/* Tell MSVC not to reference any stdlib functions */
 #ifdef _MSC_VER
 i32 _fltused = 0;
 #endif
