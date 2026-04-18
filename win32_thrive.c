@@ -568,16 +568,30 @@ THRIVE_API void thrive_panic(thrive_status status)
         thrive_win32_print(h_std, "\n    | ");
 
         /* Underline logic */
-        offset = (u32)(status.token_start - status.line_start);
+        if (status.token_start && status.line_start && status.token_start >= status.line_start)
+        {
+            offset = (u32)(status.token_start - status.line_start);
+        }
+        else
+        {
+            offset = 0;
+        }
 
         for (i = 0; i < offset; ++i)
         {
             thrive_win32_putc(h_std, ' ');
         }
 
-        len = (u32)(status.token_end - status.token_start);
+        if (status.token_end && status.token_start && status.token_end > status.token_start)
+        {
+            len = (u32)(status.token_end - status.token_start);
+        }
+        else
+        {
+            len = 1;
+        }
 
-        if (len == 0)
+        if (len > 1024)
         {
             len = 1;
         }

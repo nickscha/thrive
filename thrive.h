@@ -849,6 +849,8 @@ repeat:
             
             if (*state->source_code == '"') {
                 state->source_code++; state->column++;
+            } else {
+                token.kind = THRIVE_TOKEN_KIND_INVALID;
             }
 
             state->current = token;
