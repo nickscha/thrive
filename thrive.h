@@ -156,10 +156,8 @@ typedef enum thrive_token_kind
     THRIVE_TOKEN_KIND_NOT_BITWISE, /* ~ */
     THRIVE_TOKEN_KIND_LSHIFT,      /* << */
     THRIVE_TOKEN_KIND_RSHIFT,      /* >> */
-
-    /* Tenary */
-    THRIVE_TOKEN_KIND_QUESTION, /* ? */
-    THRIVE_TOKEN_KIND_COLON,    /* : */
+    THRIVE_TOKEN_KIND_QUESTION,    /* ? */
+    THRIVE_TOKEN_KIND_COLON,       /* : */
 
     THRIVE_TOKEN_KIND_INT,
     THRIVE_TOKEN_KIND_NAME,
@@ -189,7 +187,7 @@ typedef enum thrive_token_kind
 
 } thrive_token_kind;
 
-s8 *thrive_token_kind_names[] = {
+static s8 *thrive_token_kind_names[] = {
     "EOF",
     "NEW_LINE",
     "LPAREN",
@@ -230,6 +228,8 @@ s8 *thrive_token_kind_names[] = {
     "NAME",
     "STRING",
     "CHAR",
+
+    /* Types */
     "TYPE_U8",
     "TYPE_U16",
     "TYPE_U32",
@@ -239,6 +239,8 @@ s8 *thrive_token_kind_names[] = {
     "TYPE_I32",
     "TYPE_I64",
     "TYPE_S8",
+
+    /* Keywords */
     "KEYWORD_EXT",
     "KEYWORD_RET",
     "KEYWORD_IF",
@@ -667,7 +669,113 @@ THRIVE_API i32 thrive_token_digit_value(s8 c)
     return 0;
 }
 
-THRIVE_API THRIVE_INLINE void thrive_token_next(thrive_state *state)
+THRIVE_API u32 thrive_token_parse_char(thrive_state *state)
+{
+    u32 val = 0;
+
+    state->source_code++;
+    state->column++; /* Skip opening ' */
+
+    if (*state->source_code == '\\')
+    {
+        state->source_code++;
+        state->column++;
+
+        switch (*state->source_code)
+        {
+        case 'n':
+            val = '\n';
+            break;
+        case 'r':
+            val = '\r';
+            break;
+        case 't':
+            val = '\t';
+            break;
+        case '0':
+            val = '\0';
+            break;
+        default:
+            val = (u32)*state->source_code;
+            break;
+        }
+    }
+    else
+    {
+        val = (u32)*state->source_code;
+    }
+
+    state->source_code++;
+    state->column++;
+
+    if (*state->source_code == '\'')
+    {
+        state->source_code++;
+        state->column++; /* Skip closing ' */
+    }
+
+    return val;
+}
+
+THRIVE_API u32 thrive_token_parse_number(thrive_state *state)
+{
+    u32 value = 0;
+    u32 base = 10;
+    i32 seen_digit = 0;
+
+    /* Detect base */
+    if (*state->source_code == '0')
+    {
+        s8 next = *(state->source_code + 1);
+
+        if (next == 'x' || next == 'X')
+        {
+            base = 16;
+            state->source_code += 2;
+            state->column += 2;
+        }
+        else if (next == 'b' || next == 'B')
+        {
+            base = 2;
+            state->source_code += 2;
+            state->column += 2;
+        }
+    }
+
+    while (1)
+    {
+        s8 c = *state->source_code;
+
+        if (c == '_')
+        {
+            state->source_code++;
+            state->column++;
+            continue;
+        }
+
+        if (!thrive_token_is_digit_base(c, base))
+        {
+            break;
+        }
+
+        seen_digit = 1;
+
+        value *= base;
+        value += (u32)thrive_token_digit_value(c);
+
+        state->source_code++;
+        state->column++;
+    }
+
+    if (!seen_digit)
+    {
+        /* TODO: if no digits after 0x / 0b */
+    }
+
+    return value;
+}
+
+THRIVE_API void thrive_token_next(thrive_state *state)
 {
     thrive_token token = {0};
 
@@ -747,37 +855,8 @@ repeat:
         /* Char Literals */
         case '\'':
         {
-            u32 val = 0;
-            state->source_code++; state->column++; /* Skip opening ' */
-            
-            if (*state->source_code == '\\') 
-            {
-                state->source_code++; 
-                state->column++;
-                
-                switch (*state->source_code) {
-                    case 'n': val = '\n'; break;
-                    case 'r': val = '\r'; break;
-                    case 't': val = '\t'; break;
-                    case '0': val = '\0'; break;
-                    default:  val = (u32) *state->source_code; break;
-                }
-            } 
-            else 
-            {
-                val = (u32) *state->source_code;
-            }
-            
-            state->source_code++; state->column++;
-
-            if (*state->source_code == '\'')
-            {
-                state->source_code++; state->column++; /* Skip closing ' */
-            }
-            
             token.kind = THRIVE_TOKEN_KIND_CHAR;
-            token.value.number = val;
-
+            token.value.number = thrive_token_parse_char(state);
             state->current = token;
             return;
         }
@@ -785,61 +864,8 @@ repeat:
         case '0': case '1': case '2': case '3': case '4': case '5': case '6':
         case '7': case '8': case '9':
         {
-            u32 value = 0;
-            u32 base = 10;
-            i32 seen_digit = 0;
-
-            /* Detect base */
-            if (*state->source_code == '0') 
-            {
-                s8 next = *(state->source_code + 1);
-
-                if (next == 'x' || next == 'X') 
-                {
-                    base = 16;
-                    state->source_code += 2;
-                    state->column += 2;
-                } 
-                else if (next == 'b' || next == 'B') 
-                {
-                    base = 2;
-                    state->source_code += 2;
-                    state->column += 2;
-                }
-            }
-
-            while (1) 
-            {
-                s8 c = *state->source_code;
-
-                if (c == '_') {
-                    state->source_code++;
-                    state->column++;
-                    continue;
-                }
-
-                if (!thrive_token_is_digit_base(c, base)) 
-                {
-                    break;
-                }
-
-                seen_digit = 1;
-
-                value *= base;
-                value += (u32)thrive_token_digit_value(c);
-
-                state->source_code++;
-                state->column++;
-            }
-
-            if (!seen_digit) 
-            {
-                /* TODO: if no digits after 0x / 0b */
-            }
-
             token.kind = THRIVE_TOKEN_KIND_INT;
-            token.value.number = value;
-
+            token.value.number = thrive_token_parse_number(state);
             break;
         }
         /* Literal processing */
