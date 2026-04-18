@@ -3398,7 +3398,7 @@ THRIVE_API void thrive_x64_codegen_statement(thrive_buffer *b, thrive_ast *node)
     }
 }
 
-void thrive_x64_codegen_program(thrive_buffer *code_b, thrive_ast *node, thrive_buffer *exe_out)
+THRIVE_API void thrive_x64_codegen_program(thrive_buffer *code_b, thrive_ast *node, thrive_buffer *exe_out)
 {
     thrive_ast *curr;
     u32 i;
