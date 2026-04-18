@@ -111,6 +111,8 @@ THRIVE_STATIC_ASSERT(sizeof(u8) == 1, u8_size_must_be_1);
 THRIVE_STATIC_ASSERT(sizeof(u16) == 2, u16_size_must_be_2);
 THRIVE_STATIC_ASSERT(sizeof(u32) == 4, u32_size_must_be_4);
 THRIVE_STATIC_ASSERT(sizeof(i32) == 4, i32_size_must_be_4);
+THRIVE_STATIC_ASSERT(sizeof(u64) == 8, u64_size_must_be_8);
+THRIVE_STATIC_ASSERT(sizeof(i64) == 8, i64_size_must_be_8);
 THRIVE_STATIC_ASSERT(sizeof(f32) == 4, f32_size_must_be_4);
 THRIVE_STATIC_ASSERT(sizeof(f64) == 8, f64_size_must_be_8);
 
