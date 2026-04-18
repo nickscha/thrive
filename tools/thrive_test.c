@@ -1,6 +1,6 @@
 
 #include "../thrive.h"
-#include "../thrive_ast_print.h"
+#include "thrive_ast_print.h"
 
 #include "stdio.h"
 #include "stdlib.h"
