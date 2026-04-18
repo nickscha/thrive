@@ -300,7 +300,7 @@ THRIVE_API i32 thrive_f64_to_string(
         whole += 1;
     }
 
-    /* convert i32eger part i32o tmp (reverse) */
+    /* convert integer part i32o tmp (reverse) */
     {
         i32 w = whole;
 
@@ -334,7 +334,7 @@ THRIVE_API i32 thrive_f64_to_string(
         buf[p++] = '-';
     }
 
-    /* append i32eger part (reverse) */
+    /* append integer part (reverse) */
     while (n--)
     {
         buf[p++] = tmp[n];
