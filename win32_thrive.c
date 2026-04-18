@@ -84,10 +84,6 @@ void *memcpy(void *dest, void *src, u32 count)
 #define FILE_FLAG_SEQUENTIAL_SCAN 0x08000000
 #define INVALID_FILE_SIZE ((u32)0xFFFFFFFF)
 
-/* File Memory Mapping */
-#define PAGE_READONLY 0x02
-#define FILE_MAP_READ 0x0004
-
 /* File IO */
 typedef struct FILETIME
 {
@@ -127,8 +123,9 @@ WIN32_API(i32)    VirtualFree(void *lpAddress, u32 dwSize, u32 dwFreeType);
 
 /* Console IO */
 WIN32_API(void *) GetStdHandle(u32 nStdHandle);
-WIN32_API(i32)    WriteConsoleA(void *hConsoleOutput, void *lpBuffer, u32 nNumberOfCharsToWrite, u32 *lpNumberOfCharsWritten, void *lpReserved);
 WIN32_API(s8 *)   GetCommandLineA(void);
+WIN32_API(i32)    WriteConsoleA(void *hConsoleOutput, void *lpBuffer, u32 nNumberOfCharsToWrite, u32 *lpNumberOfCharsWritten, void *lpReserved);
+WIN32_API(i32)    SetConsoleTextAttribute(void *hConsoleOutput, u16 wAttributes);
 
 /* File IO */
 WIN32_API(i32)    CloseHandle(void *hObject);
@@ -139,14 +136,9 @@ WIN32_API(u32)    GetFileSize(void *hFile, u32 *lpFileSizeHigh);
 WIN32_API(i32)    ReadFile(void *hFile, void *lpBuffer, u32 nNumberOfBytesToRead, u32 *lpNumberOfBytesRead, void *lpOverlapped);
 WIN32_API(i32)    WriteFile(void *hFile, void *lpBuffer, u32 nNumberOfBytesToWrite, u32 *lpNumberOfBytesWritten, void *lpOverlapped);
 
-/* File Memory Mapping */
-WIN32_API(void *) CreateFileMappingA(void *hFile, void *lpFileMappingAttributes, u32 flProtect, u32 dwMaximumSizeHigh, u32 dwMaximumSizeLow, s8 *lpName);
-WIN32_API(void *) MapViewOfFile(void *hFileMappingObject, u32 dwDesiredAccess, u32 dwFileOffsetHigh, u32 dwFileOffsetLow, u32 dwNumberOfBytesToMap);
-
 /* Performance Metrics */
 WIN32_API(i32)    QueryPerformanceCounter(LARGE_INTEGER *lpPerformanceCount);
 WIN32_API(i32)    QueryPerformanceFrequency(LARGE_INTEGER *lpFrequency);
-WIN32_API(i32)    SetConsoleTextAttribute(void *hConsoleOutput, u16 wAttributes);
 
 /* General */
 WIN32_API(void)   Sleep(u32 dwMilliseconds);
@@ -165,8 +157,6 @@ THRIVE_API f64 win32_elapsed_ms(
 
     return (delta * 1000.0) / (f64)freq->LowPart;
 }
-
-#define FILE_MMAP_THRESHOLD (1024 * 1024) /* 1 MB */
 
 THRIVE_API THRIVE_INLINE FILETIME win32_io_file_mod_time(s8 *file)
 {
@@ -217,47 +207,23 @@ s8 *win32_io_file_read(s8 *filename, u32 *file_size_out)
         return (void *)0;
     }
 
-    if (fileSize <= FILE_MMAP_THRESHOLD)
+    /* Small file: read normally */
+    buffer = (s8 *)VirtualAlloc((void *)0, fileSize + 1, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+
+    if (!buffer)
     {
-        /* Small file: read normally */
-        buffer = (s8 *)VirtualAlloc((void *)0, fileSize + 1, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
-
-        if (!buffer)
-        {
-            CloseHandle(hFile);
-            return (void *)0;
-        }
-
-        if (!ReadFile(hFile, buffer, fileSize, &bytesRead, (void *)0) || bytesRead != fileSize)
-        {
-            VirtualFree(buffer, 0, MEM_RELEASE);
-            CloseHandle(hFile);
-            return (void *)0;
-        }
-
-        buffer[fileSize] = '\0'; /* Null-terminate */
+        CloseHandle(hFile);
+        return (void *)0;
     }
-    else
+
+    if (!ReadFile(hFile, buffer, fileSize, &bytesRead, (void *)0) || bytesRead != fileSize)
     {
-        /* Large file: memory-mapped */
-        void *hMap = CreateFileMappingA(hFile, (void *)0, PAGE_READONLY, 0, 0, (void *)0);
-
-        if (!hMap)
-        {
-            CloseHandle(hFile);
-            return (void *)0;
-        }
-
-        buffer = (s8 *)MapViewOfFile(hMap, FILE_MAP_READ, 0, 0, 0);
-
-        CloseHandle(hMap);
-
-        if (!buffer)
-        {
-            CloseHandle(hFile);
-            return (void *)0;
-        }
+        VirtualFree(buffer, 0, MEM_RELEASE);
+        CloseHandle(hFile);
+        return (void *)0;
     }
+
+    buffer[fileSize] = '\0'; /* Null-terminate */
 
     *file_size_out = fileSize;
     CloseHandle(hFile);
