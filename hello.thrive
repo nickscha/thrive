@@ -1,23 +1,27 @@
 ; this is a line comment
-ext u32 Sleep(u32 milliseconds)
-ext u32 MessageBoxA(u32 hWnd : s8 *lpText : s8 *lpCaption : u32 uType)
-ext u32 ExitProcess(u32 uExitCode)
-ext u32 WriteConsoleA(u32 *hConsoleOutput : u32 *lpBuffer : u32 nNumberOfCharsToWrite : u32 *lpNumberOfCharsWritten : u32 *lpReserved)
+ext u32  Sleep(u32 milliseconds)
+ext u32  MessageBoxA(u32 hWnd : s8 *lpText : s8 *lpCaption : u32 uType)
+ext u32  ExitProcess(u32 uExitCode)
+ext u32  WriteConsoleA(u32 *hConsoleOutput : u32 *lpBuffer : u32 nNumberOfCharsToWrite : u32 *lpNumberOfCharsWritten : u32 *lpReserved)
 ext u32* GetStdHandle(u32 nStdHandle)
 
-s8 *text = "Hello World from THRIVE!\nIt works!"
-s8 *text2 = "arr[1] == 10"
-s8 *text3 = "Left Shift works"
-s8 *text4 = "Goodbye"
+s8 *text    = "Hello World from THRIVE!\nIt works!"
+s8 *text2   = "arr[1] == 10"
+s8 *text3   = "Left Shift works"
+s8 *text4   = "Goodbye"
 s8 *caption = "Win32 Success"
+
+; Array Initialization
 u32 arr[3]
 
 arr[0] = 5
 arr[1] = arr[0] + 5
 arr[2] = 15
 
+; Pointer
 u32 *ptr = arr
 
+; Function
 u32 add(u32 a : u32 b) {
  ret a + b
 }
@@ -25,7 +29,9 @@ u32 add(u32 a : u32 b) {
 u32 i = 0
 
 for (i = 0 : i < (0x01 + 0b10) : ++i) {
+
   MessageBoxA(0 : text : caption : 0)
+
   if (i == 0) {
      continue
   } else if ((i == add(0 : 1) && ptr[i] == 10) ? 1 : 0) {
@@ -33,6 +39,7 @@ for (i = 0 : i < (0x01 + 0b10) : ++i) {
      MessageBoxA(0 : text2 : caption : 0)
      break
   }
+
 }
 
 if (9 << 3 == 72) {
