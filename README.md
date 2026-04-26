@@ -43,19 +43,6 @@ u32 a = 24
 u32 b = a * (4 + 2)
 ```
 
-## Quick Start
-
-Download or clone thrive.h and include it in your project.
-
-```C
-#include "thrive.h" /* Low Level Programming Language inbetween Assembly and C */
-
-int main() {
-
-    return 0;
-}
-```
-
 ## "nostdlib" Motivation & Purpose
 
 nostdlib is a lightweight, minimalistic approach to C development that removes dependencies on the standard library. The motivation behind this project is to provide developers with greater control over their code by eliminating unnecessary overhead, reducing binary size, and enabling deployment in resource-constrained environments.
