@@ -22,7 +22,6 @@ Low Level Programming Language inbetween Assembly and C (THRIVE).
 - **Procedural** - No mixed declarations, ...
 - **Proper sized types** — b8,s8,u32,i32,f32,...  
 - **No header files** -
-- **No standard library** -  
 
 ## Language Specification
 
